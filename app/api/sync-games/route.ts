@@ -41,13 +41,17 @@ export async function GET() {
 
   for (const game of games) {
     const bookmakers = game.bookmakers || [];
-    const firstBookmaker = bookmakers[0];
 
-    if (!firstBookmaker) {
+    const bookmaker =
+      bookmakers.find(
+        (bookmaker: any) => bookmaker.key === "draftkings"
+      ) || bookmakers[0];
+
+    if (!bookmaker) {
       continue;
     }
 
-    const markets = firstBookmaker.markets || [];
+    const markets = bookmaker.markets || [];
 
     const spreadMarket = markets.find(
       (market: any) => market.key === "spreads"
@@ -69,8 +73,16 @@ export async function GET() {
       (outcome: any) => outcome.name === game.away_team
     );
 
+    const homeSpread = spreadOutcomes.find(
+      (outcome: any) => outcome.name === game.home_team
+    );
+
     const overOutcome = totalOutcomes.find(
       (outcome: any) => outcome.name === "Over"
+    );
+
+    const underOutcome = totalOutcomes.find(
+      (outcome: any) => outcome.name === "Under"
     );
 
     const awayMoneyline = moneylineOutcomes.find(
@@ -83,12 +95,37 @@ export async function GET() {
 
     const spread =
       awaySpread?.point !== undefined
-        ? Math.abs(Number(awaySpread.point))
+        ? Number(awaySpread.point)
+        : null;
+
+    const spreadHome =
+      homeSpread?.point !== undefined
+        ? Number(homeSpread.point)
+        : null;
+
+    const spreadOddsAway =
+      awaySpread?.price !== undefined
+        ? Number(awaySpread.price)
+        : null;
+
+    const spreadOddsHome =
+      homeSpread?.price !== undefined
+        ? Number(homeSpread.price)
         : null;
 
     const total =
       overOutcome?.point !== undefined
         ? Number(overOutcome.point)
+        : null;
+
+    const totalOddsOver =
+      overOutcome?.price !== undefined
+        ? Number(overOutcome.price)
+        : null;
+
+    const totalOddsUnder =
+      underOutcome?.price !== undefined
+        ? Number(underOutcome.price)
         : null;
 
     const moneylineAway =
@@ -110,10 +147,21 @@ export async function GET() {
           starts_at: game.commence_time,
           away_team: game.away_team,
           home_team: game.home_team,
+
           spread,
+          spread_home: spreadHome,
+
+          spread_odds_away: spreadOddsAway,
+          spread_odds_home: spreadOddsHome,
+
           total,
+
+          total_odds_over: totalOddsOver,
+          total_odds_under: totalOddsUnder,
+
           moneyline_away: moneylineAway,
           moneyline_home: moneylineHome,
+
           status: "scheduled",
         },
         {

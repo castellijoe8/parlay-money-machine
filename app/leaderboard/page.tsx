@@ -30,7 +30,7 @@ export default function LeaderboardPage() {
 
     const { data: picks, error: picksError } = await supabase
       .from("picks")
-      .select("user_id, result");
+      .select("user_id, result, odds");
 
     if (picksError) {
       console.error("Error loading picks:", picksError);
@@ -80,7 +80,6 @@ export default function LeaderboardPage() {
         .trim()
         .toLowerCase();
 
-      // Only completed wagers count
       if (result !== "win" && result !== "loss") {
         return;
       }
@@ -100,14 +99,23 @@ export default function LeaderboardPage() {
       if (result === "win") {
         stats[pick.user_id].wins += 1;
 
-        // Every wager is exactly 1 unit
-        stats[pick.user_id].net_units += 1;
+        const odds = Number(pick.odds);
+
+        let profit = 1;
+
+        if (!isNaN(odds)) {
+          if (odds < 0) {
+            profit = 100 / Math.abs(odds);
+          } else {
+            profit = odds / 100;
+          }
+        }
+
+        stats[pick.user_id].net_units += profit;
       }
 
       if (result === "loss") {
         stats[pick.user_id].losses += 1;
-
-        // Every loss is -1 unit
         stats[pick.user_id].net_units -= 1;
       }
 
@@ -165,9 +173,7 @@ export default function LeaderboardPage() {
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="grid grid-cols-14 border-b border-gray-200 bg-gray-50 px-6 py-4 text-sm font-semibold text-gray-600">
-            <div className="col-span-1">
-              #
-            </div>
+            <div className="col-span-1">#</div>
 
             <div className="col-span-5">
               Player
@@ -242,4 +248,4 @@ export default function LeaderboardPage() {
       )}
     </main>
   );
-}   
+}
