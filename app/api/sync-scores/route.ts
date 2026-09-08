@@ -37,6 +37,7 @@ export async function GET() {
 
   const now = Date.now();
 
+  // Only hit The Odds API every 15 minutes globally.
   if (syncState.last_run_at) {
     const lastRun = new Date(syncState.last_run_at).getTime();
     const minutesSinceLastRun = (now - lastRun) / 60000;
@@ -61,8 +62,7 @@ export async function GET() {
     })
     .eq("key", "scores");
 
-  // Pull live and upcoming NCAAF scores.
-  // No daysFrom = lower-cost live-score request.
+  // Pull NCAAF scores.
   const response = await fetch(
     `https://api.the-odds-api.com/v4/sports/americanfootball_ncaaf/scores/?apiKey=${apiKey}`,
     {
@@ -86,6 +86,7 @@ export async function GET() {
 
   let updated = 0;
   let liveGames = 0;
+  let gamesScored = 0;
 
   for (const game of games) {
     const completed = game.completed === true;
@@ -100,9 +101,19 @@ export async function GET() {
         (score: any) => score.name === game.away_team
       )?.score ?? null;
 
-    if (!completed && homeScore !== null && awayScore !== null) {
+    const hasScores =
+      homeScore !== null && awayScore !== null;
+
+    if (!completed && hasScores) {
       liveGames++;
     }
+
+    // Determine the correct game status.
+    const gameStatus = completed
+      ? "final"
+      : hasScores
+        ? "live"
+        : "scheduled";
 
     const { data: updatedGame, error } = await supabase
       .from("games")
@@ -111,7 +122,7 @@ export async function GET() {
           homeScore !== null ? Number(homeScore) : null,
         away_score:
           awayScore !== null ? Number(awayScore) : null,
-        status: completed ? "final" : "scheduled",
+        status: gameStatus,
       })
       .eq("external_id", game.id)
       .select("id, status")
@@ -135,6 +146,8 @@ export async function GET() {
 
       if (scoreError) {
         console.error("Error scoring game:", scoreError);
+      } else {
+        gamesScored++;
       }
     }
   }
@@ -145,5 +158,6 @@ export async function GET() {
     games_found: games.length,
     games_updated: updated,
     live_games: liveGames,
+    games_scored: gamesScored,
   });
 }
