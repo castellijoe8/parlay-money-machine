@@ -1,7 +1,7 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
-
+import { useEffect, useState } from "react"; 
 import { supabase } from "@/lib/supabase";
 
 type Game = {
@@ -82,10 +82,6 @@ export default function HomePage() {
     <main className="min-h-screen bg-gray-50 px-6 py-8">
       <div className="mx-auto max-w-5xl">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Parlay Money Machine
-          </h1>
-
           <p className="mt-2 text-gray-600">
             Pick your side and make your 1-unit wager.
           </p>
