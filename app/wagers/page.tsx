@@ -24,7 +24,6 @@ export default function WagersPage() {
   const [wagers, setWagers] = useState<Wager[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadWagers();
@@ -76,36 +75,6 @@ export default function WagersPage() {
     setLoading(false);
   }
 
-  async function settleWager(
-    wagerId: string,
-    result: "win" | "loss"
-  ) {
-    setUpdatingId(wagerId);
-    setMessage("");
-
-    const { error } = await supabase
-      .from("picks")
-      .update({ result })
-      .eq("id", wagerId);
-
-    if (error) {
-      console.error("Settlement error:", error);
-      setMessage("Unable to update wager.");
-      setUpdatingId(null);
-      return;
-    }
-
-    setWagers((currentWagers) =>
-      currentWagers.map((wager) =>
-        wager.id === wagerId
-          ? { ...wager, result }
-          : wager
-      )
-    );
-
-    setUpdatingId(null);
-  }
-
   const pendingWagers = wagers.filter(
     (wager) => !wager.result || wager.result === "pending"
   );
@@ -123,19 +92,7 @@ export default function WagersPage() {
   ).length;
 
   const netUnits = completedWagers.reduce(
-    (total, wager) => {
-      const result = wager.result?.toLowerCase();
-
-      if (result === "win") {
-        return total + 1;
-      }
-
-      if (result === "loss") {
-        return total - 1;
-      }
-
-      return total;
-    },
+    (total, wager) => total + Number(wager.units ?? 0),
     0
   );
 
@@ -180,7 +137,17 @@ export default function WagersPage() {
       );
     }
 
-    return parts.join(" • ");
+    return parts.join(" ");
+  }
+
+  function formatUnits(units: number | null) {
+    const value = Number(units ?? 0);
+
+    if (value > 0) {
+      return `+${value.toFixed(2)} Units`;
+    }
+
+    return `${value.toFixed(2)} Units`;
   }
 
   return (
@@ -273,9 +240,7 @@ export default function WagersPage() {
 
                           {wager.game && (
                             <p className="mt-1 text-sm text-gray-500">
-                              {formatDate(
-                                wager.game.starts_at
-                              )}
+                              {formatDate(wager.game.starts_at)}
                             </p>
                           )}
 
@@ -301,36 +266,6 @@ export default function WagersPage() {
                           <span className="inline-block rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-800">
                             Pending
                           </span>
-
-                          <div className="mt-4 flex gap-2">
-                            <button
-                              onClick={() =>
-                                settleWager(wager.id, "win")
-                              }
-                              disabled={
-                                updatingId === wager.id
-                              }
-                              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {updatingId === wager.id
-                                ? "..."
-                                : "Win"}
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                settleWager(wager.id, "loss")
-                              }
-                              disabled={
-                                updatingId === wager.id
-                              }
-                              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {updatingId === wager.id
-                                ? "..."
-                                : "Loss"}
-                            </button>
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -357,6 +292,7 @@ export default function WagersPage() {
                       wager.result?.toLowerCase();
 
                     const won = result === "win";
+                    const pushed = result === "push";
 
                     return (
                       <div
@@ -382,13 +318,15 @@ export default function WagersPage() {
 
                           <div className="text-right">
                             <p className="font-bold">
-                              {won ? "+1.00 Units" : "-1.00 Units"}
+                              {formatUnits(wager.units)}
                             </p>
 
                             <span
                               className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-medium ${
                                 won
                                   ? "bg-green-100 text-green-800"
+                                  : pushed
+                                  ? "bg-gray-100 text-gray-700"
                                   : "bg-red-100 text-red-800"
                               }`}
                             >

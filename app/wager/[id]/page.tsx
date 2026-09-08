@@ -112,10 +112,16 @@ export default function WagerPage() {
       return;
     }
 
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle();
+
     const { error } = await supabase.from("picks").insert({
       game_id: game.id,
       user_id: user.id,
-      user_name: user.email?.split("@")[0] || "User",
+      user_name: profile?.display_name || "Player",
       pick: selectedBet.pick,
       bet_type: selectedBet.betType,
       line: selectedBet.line,
@@ -139,7 +145,9 @@ export default function WagerPage() {
       <main className="min-h-screen bg-gray-50 px-6 py-8">
         <div className="mx-auto max-w-3xl">
           <div className="rounded-xl bg-white p-6 shadow-sm">
-            <p className="text-gray-500">Loading game...</p>
+            <p className="text-gray-500">
+              Loading game...
+            </p>
           </div>
         </div>
       </main>
@@ -227,7 +235,9 @@ export default function WagerPage() {
         }`}
       >
         <div className="flex items-center justify-between">
-          <span className="font-semibold">{option.label}</span>
+          <span className="font-semibold">
+            {option.label}
+          </span>
 
           {option.odds !== null && (
             <span className="font-semibold">

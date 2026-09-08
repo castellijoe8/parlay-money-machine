@@ -56,10 +56,12 @@ export default function HomePage() {
 
     if (error) {
       console.error("Games error:", error);
-      setMessage("Unable to load upcoming games.");
+      setMessage(`Database error: ${error.message}`);
       setLoading(false);
       return;
     }
+
+    console.log("Games returned from Supabase:", data);
 
     const now = new Date();
 
@@ -72,6 +74,8 @@ export default function HomePage() {
 
       return startTime >= now;
     });
+
+    console.log("Visible upcoming games:", visibleGames);
 
     setGames(visibleGames);
     setLoading(false);
@@ -251,22 +255,20 @@ export default function HomePage() {
                         </p>
 
                         <div className="mt-2 space-y-1 text-sm">
-                          <div className="mt-2 space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span>{game.away_team}</span>
+                          <div className="flex justify-between">
+                            <span>{game.away_team}</span>
 
-                              <span className="font-semibold">
-                                {formatOdds(game.moneyline_away)}
-                              </span>
-                            </div>
+                            <span className="font-semibold">
+                              {formatOdds(game.moneyline_away)}
+                            </span>
+                          </div>
 
-                            <div className="flex justify-between">
-                              <span>{game.home_team}</span>
+                          <div className="flex justify-between">
+                            <span>{game.home_team}</span>
 
-                              <span className="font-semibold">
-                                {formatOdds(game.moneyline_home)}
-                              </span>
-                            </div>
+                            <span className="font-semibold">
+                              {formatOdds(game.moneyline_home)}
+                            </span>
                           </div>
                         </div>
                       </div>

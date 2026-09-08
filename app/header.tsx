@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 export default function Header() {
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -13,7 +14,21 @@ export default function Header() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      setEmail(user?.email ?? null);
+      if (!user) {
+        setDisplayName(null);
+        setEmail(null);
+        return;
+      }
+
+      setEmail(user.email ?? null);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      setDisplayName(profile?.display_name ?? null);
     }
 
     loadUser();
@@ -21,7 +36,14 @@ export default function Header() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setEmail(session?.user?.email ?? null);
+      if (!session?.user) {
+        setDisplayName(null);
+        setEmail(null);
+        return;
+      }
+
+      setEmail(session.user.email ?? null);
+      loadUser();
     });
 
     return () => {
@@ -75,9 +97,12 @@ export default function Header() {
 
           {email ? (
             <>
-              <span className="hidden max-w-[180px] truncate text-gray-500 lg:inline">
-                {email}
-              </span>
+              <Link
+                href="/profile"
+                className="hidden max-w-[180px] truncate text-gray-500 transition hover:text-gray-900 lg:inline"
+              >
+                {displayName || email}
+              </Link>
 
               <button
                 onClick={signOut}

@@ -55,10 +55,48 @@ export default function FriendsWagersPage() {
       if (error) {
         console.error(error);
         setMessage("Unable to load friends' wagers.");
-      } else {
-        setWagers((data ?? []) as unknown as FriendWager[]);
+        setLoading(false);
+        return;
       }
 
+      const picks = (data ?? []) as unknown as FriendWager[];
+
+      const userIds = [
+        ...new Set(picks.map((wager) => wager.user_id)),
+      ];
+
+      let profileMap: Record<string, string> = {};
+
+      if (userIds.length > 0) {
+        const { data: profiles, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select("id, display_name")
+            .in("id", userIds);
+
+        if (profileError) {
+          console.error("Profiles error:", profileError);
+        } else {
+          profileMap = Object.fromEntries(
+            (profiles ?? [])
+              .filter((profile) => profile.display_name)
+              .map((profile) => [
+                profile.id,
+                profile.display_name,
+              ])
+          );
+        }
+      }
+
+      const wagersWithNames = picks.map((wager) => ({
+        ...wager,
+        user_name:
+          profileMap[wager.user_id] ||
+          wager.user_name ||
+          "Player",
+      }));
+
+      setWagers(wagersWithNames);
       setLoading(false);
     }
 
@@ -84,17 +122,21 @@ export default function FriendsWagersPage() {
 
     if (wager.line !== null) {
       parts.push(
-        wager.line > 0 ? `+${wager.line}` : String(wager.line)
+        wager.line > 0
+          ? `+${wager.line}`
+          : String(wager.line)
       );
     }
 
     if (wager.odds !== null) {
       parts.push(
-        wager.odds > 0 ? `+${wager.odds}` : String(wager.odds)
+        wager.odds > 0
+          ? `+${wager.odds}`
+          : String(wager.odds)
       );
     }
 
-    return parts.join(" • ");
+    return parts.join(" ");
   }
 
   function resultStyle(result: string | null) {
@@ -162,7 +204,7 @@ export default function FriendsWagersPage() {
                 <div className="flex items-start justify-between gap-6">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-gray-900">
-                      {wager.user_name || "Player"}
+                      {wager.user_name}
                     </p>
 
                     {wager.game && (

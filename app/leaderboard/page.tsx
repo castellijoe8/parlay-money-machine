@@ -30,7 +30,7 @@ export default function LeaderboardPage() {
 
     const { data: picks, error: picksError } = await supabase
       .from("picks")
-      .select("user_id, result, odds");
+      .select("user_id, result, units");
 
     if (picksError) {
       console.error("Error loading picks:", picksError);
@@ -80,7 +80,11 @@ export default function LeaderboardPage() {
         .trim()
         .toLowerCase();
 
-      if (result !== "win" && result !== "loss") {
+      if (
+        result !== "win" &&
+        result !== "loss" &&
+        result !== "push"
+      ) {
         return;
       }
 
@@ -98,28 +102,16 @@ export default function LeaderboardPage() {
 
       if (result === "win") {
         stats[pick.user_id].wins += 1;
-
-        const odds = Number(pick.odds);
-
-        let profit = 1;
-
-        if (!isNaN(odds)) {
-          if (odds < 0) {
-            profit = 100 / Math.abs(odds);
-          } else {
-            profit = odds / 100;
-          }
-        }
-
-        stats[pick.user_id].net_units += profit;
       }
 
       if (result === "loss") {
         stats[pick.user_id].losses += 1;
-        stats[pick.user_id].net_units -= 1;
       }
 
       stats[pick.user_id].total += 1;
+      stats[pick.user_id].net_units += Number(
+        pick.units ?? 0
+      );
     });
 
     const rows = Object.values(stats);
