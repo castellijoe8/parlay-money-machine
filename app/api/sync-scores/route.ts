@@ -87,6 +87,7 @@ export async function GET() {
   let updated = 0;
   let liveGames = 0;
   let gamesScored = 0;
+  let gamesNotInDatabase = 0;
 
   for (const game of games) {
     const completed = game.completed === true;
@@ -126,10 +127,17 @@ export async function GET() {
       })
       .eq("external_id", game.id)
       .select("id, status")
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("Error updating game:", error);
+      continue;
+    }
+
+    // The Odds API can return games that we haven't imported into
+    // our database yet. That's normal, so just skip those games.
+    if (!updatedGame) {
+      gamesNotInDatabase++;
       continue;
     }
 
@@ -159,5 +167,6 @@ export async function GET() {
     games_updated: updated,
     live_games: liveGames,
     games_scored: gamesScored,
+    games_not_in_database: gamesNotInDatabase,
   });
 }
