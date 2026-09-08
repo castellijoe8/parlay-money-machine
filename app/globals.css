@@ -23,4 +23,7 @@ body {
   font-family: 'Alumni Sans Collegiate One', Impact, sans-serif;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+  line-height: 0.9;
+  font-weight: 400;
+  color: #18453B;
 }
