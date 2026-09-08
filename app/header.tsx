@@ -35,11 +35,11 @@ export default function Header() {
   }
 
   return (
-    <header className="border-b border-gray-200 bg-white">
+    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link
           href="/"
-          className="brand-font text-4xl text-green-900"
+          className="brand-font text-5xl font-bold tracking-wide text-green-900"
         >
           Parlay Money Machine
         </Link>
@@ -56,7 +56,7 @@ export default function Header() {
             href="/wagers"
             className="text-gray-600 transition hover:text-gray-900"
           >
-            My Wagers
+            My Bets
           </Link>
 
           <Link
