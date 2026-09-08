@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 export default function Header() {
@@ -35,63 +36,63 @@ export default function Header() {
 
   return (
     <header className="border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-        <a
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <Link
           href="/"
-          className="text-xl font-bold text-gray-900"
+          className="brand-font text-4xl text-green-900"
         >
-          Friendly Wager
-        </a>
+          Parlay Money Machine
+        </Link>
 
-        <nav className="flex items-center gap-5 text-sm font-semibold">
-          <a
+        <nav className="flex items-center gap-6 text-sm font-semibold">
+          <Link
             href="/"
-            className="text-gray-600 hover:text-gray-900"
+            className="text-gray-600 transition hover:text-gray-900"
           >
             Home
-          </a>
+          </Link>
 
-          <a
+          <Link
             href="/wagers"
-            className="text-gray-600 hover:text-gray-900"
+            className="text-gray-600 transition hover:text-gray-900"
           >
             My Wagers
-          </a>
+          </Link>
 
-          <a
+          <Link
             href="/friends"
-            className="text-gray-600 hover:text-gray-900"
+            className="text-gray-600 transition hover:text-gray-900"
           >
-            Friends' Wagers
-          </a>
+            Friends
+          </Link>
 
-          <a
+          <Link
             href="/leaderboard"
-            className="text-gray-600 hover:text-gray-900"
+            className="text-gray-600 transition hover:text-gray-900"
           >
             Leaderboard
-          </a>
+          </Link>
 
           {email ? (
             <>
-              <span className="hidden text-gray-500 sm:inline">
+              <span className="hidden max-w-[180px] truncate text-gray-500 lg:inline">
                 {email}
               </span>
 
               <button
                 onClick={signOut}
-                className="rounded-lg bg-gray-900 px-4 py-2 text-white hover:bg-gray-700"
+                className="rounded-lg bg-gray-900 px-4 py-2 text-white transition hover:bg-gray-700"
               >
                 Sign Out
               </button>
             </>
           ) : (
-            <a
+            <Link
               href="/login"
-              className="rounded-lg bg-gray-900 px-4 py-2 text-white hover:bg-gray-700"
+              className="rounded-lg bg-gray-900 px-4 py-2 text-white transition hover:bg-gray-700"
             >
               Sign In
-            </a>
+            </Link>
           )}
         </nav>
       </div>

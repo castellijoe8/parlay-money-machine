@@ -1,245 +1,233 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import { supabase } from "@/lib/supabase";
 
-type LeaderboardRow = {
-  user_id: string;
-  user_name: string;
-  wins: number;
-  losses: number;
-  total: number;
-  net_units: number;
-};
-
-type Profile = {
+type Game = {
   id: string;
-  display_name: string | null;
+  away_team: string;
+  home_team: string;
+  starts_at: string;
+  spread: number | null;
+  spread_home: number | null;
+  spread_odds_away: number | null;
+  spread_odds_home: number | null;
+  total: number | null;
+  total_odds_over: number | null;
+  total_odds_under: number | null;
+  moneyline_away: number | null;
+  moneyline_home: number | null;
 };
 
-export default function LeaderboardPage() {
-  const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
+export default function HomePage() {
+  const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    loadLeaderboard();
+    loadGames();
   }, []);
 
-  async function loadLeaderboard() {
+  async function loadGames() {
     setLoading(true);
+    setMessage("");
 
-    const { data: picks, error: picksError } = await supabase
-      .from("picks")
-      .select("user_id, result");
+    const { data, error } = await supabase
+      .from("games")
+      .select(
+        "id, away_team, home_team, starts_at, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
+      )
+      .gte("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true });
 
-    if (picksError) {
-      console.error("Error loading picks:", picksError);
+    if (error) {
+      console.error("Games error:", error);
+      setMessage("Unable to load upcoming games.");
       setLoading(false);
       return;
     }
 
-    if (!picks || picks.length === 0) {
-      setLeaderboard([]);
-      setLoading(false);
-      return;
-    }
-
-    const userIds = [
-      ...new Set(
-        picks
-          .map((pick) => pick.user_id)
-          .filter(Boolean)
-      ),
-    ];
-
-    const { data: profiles, error: profilesError } =
-      await supabase
-        .from("profiles")
-        .select("id, display_name")
-        .in("id", userIds);
-
-    if (profilesError) {
-      console.error("Error loading profiles:", profilesError);
-    }
-
-    const profileMap = new Map<string, string>();
-
-    (profiles ?? []).forEach((profile: Profile) => {
-      profileMap.set(
-        profile.id,
-        profile.display_name || "Player"
-      );
-    });
-
-    const stats: Record<string, LeaderboardRow> = {};
-
-    picks.forEach((pick) => {
-      if (!pick.user_id) return;
-
-      const result = String(pick.result ?? "")
-        .trim()
-        .toLowerCase();
-
-      // Only completed wagers count
-      if (result !== "win" && result !== "loss") {
-        return;
-      }
-
-      if (!stats[pick.user_id]) {
-        stats[pick.user_id] = {
-          user_id: pick.user_id,
-          user_name:
-            profileMap.get(pick.user_id) || "Player",
-          wins: 0,
-          losses: 0,
-          total: 0,
-          net_units: 0,
-        };
-      }
-
-      if (result === "win") {
-        stats[pick.user_id].wins += 1;
-
-        // Every wager is exactly 1 unit
-        stats[pick.user_id].net_units += 1;
-      }
-
-      if (result === "loss") {
-        stats[pick.user_id].losses += 1;
-
-        // Every loss is -1 unit
-        stats[pick.user_id].net_units -= 1;
-      }
-
-      stats[pick.user_id].total += 1;
-    });
-
-    const rows = Object.values(stats);
-
-    rows.sort((a, b) => {
-      if (b.net_units !== a.net_units) {
-        return b.net_units - a.net_units;
-      }
-
-      if (b.wins !== a.wins) {
-        return b.wins - a.wins;
-      }
-
-      const aPercentage =
-        a.total > 0 ? a.wins / a.total : 0;
-
-      const bPercentage =
-        b.total > 0 ? b.wins / b.total : 0;
-
-      return bPercentage - aPercentage;
-    });
-
-    setLeaderboard(rows);
+    setGames(data ?? []);
     setLoading(false);
   }
 
+  function formatDate(date: string) {
+    return new Date(date).toLocaleString([], {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  function formatOdds(odds: number | null) {
+    if (odds === null) {
+      return "—";
+    }
+
+    return odds > 0 ? `+${odds}` : String(odds);
+  }
+
+  function formatLine(line: number | null) {
+    if (line === null) {
+      return "—";
+    }
+
+    return line > 0 ? `+${line}` : String(line);
+  }
+
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Leaderboard
-        </h1>
+    <main className="min-h-screen bg-gray-50 px-6 py-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Parlay Money Machine
+          </h1>
 
-        <p className="mt-2 text-gray-600">
-          See who&apos;s winning the most wagers.
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <p className="text-gray-600">
-            Loading leaderboard...
+          <p className="mt-2 text-gray-600">
+            Pick your side and make your 1-unit wager.
           </p>
         </div>
-      ) : leaderboard.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <p className="text-gray-600">
-            No completed wagers yet.
+
+        <section>
+          <h2 className="text-2xl font-bold text-gray-900">
+            Upcoming Games
+          </h2>
+
+          <p className="mt-1 text-gray-500">
+            Choose a game to make your wager.
           </p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <div className="grid grid-cols-14 border-b border-gray-200 bg-gray-50 px-6 py-4 text-sm font-semibold text-gray-600">
-            <div className="col-span-1">
-              #
+
+          {loading ? (
+            <div className="mt-6 rounded-xl bg-white p-6 shadow-sm">
+              <p className="text-gray-500">
+                Loading upcoming games...
+              </p>
             </div>
-
-            <div className="col-span-5">
-              Player
+          ) : message ? (
+            <div className="mt-6 rounded-xl bg-white p-6 shadow-sm">
+              <p className="text-gray-500">{message}</p>
             </div>
-
-            <div className="col-span-2 text-center">
-              W
+          ) : games.length === 0 ? (
+            <div className="mt-6 rounded-xl bg-white p-6 shadow-sm">
+              <p className="font-semibold text-gray-900">
+                No upcoming games
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Check back soon for new games.
+              </p>
             </div>
-
-            <div className="col-span-2 text-center">
-              L
-            </div>
-
-            <div className="col-span-2 text-center">
-              %
-            </div>
-
-            <div className="col-span-2 text-center">
-              Net Units
-            </div>
-          </div>
-
-          {leaderboard.map((player, index) => {
-            const winPercentage =
-              player.total > 0
-                ? Math.round(
-                    (player.wins / player.total) * 100
-                  )
-                : 0;
-
-            return (
-              <div
-                key={player.user_id}
-                className="grid grid-cols-14 items-center border-b border-gray-100 px-6 py-4 last:border-b-0"
-              >
-                <div className="col-span-1 font-bold text-gray-500">
-                  {index + 1}
-                </div>
-
-                <div className="col-span-5 font-semibold text-gray-900">
-                  {player.user_name}
-                </div>
-
-                <div className="col-span-2 text-center font-semibold text-green-600">
-                  {player.wins}
-                </div>
-
-                <div className="col-span-2 text-center font-semibold text-red-600">
-                  {player.losses}
-                </div>
-
-                <div className="col-span-2 text-center font-semibold text-gray-900">
-                  {winPercentage}%
-                </div>
-
+          ) : (
+            <div className="mt-6 space-y-4">
+              {games.map((game) => (
                 <div
-                  className={`col-span-2 text-center font-bold ${
-                    player.net_units > 0
-                      ? "text-green-600"
-                      : player.net_units < 0
-                      ? "text-red-600"
-                      : "text-gray-900"
-                  }`}
+                  key={game.id}
+                  className="rounded-xl bg-white p-6 shadow-sm"
                 >
-                  {player.net_units > 0 ? "+" : ""}
-                  {player.net_units.toFixed(2)}
+                  <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">
+                        {game.away_team} vs. {game.home_team}
+                      </h3>
+
+                      <p className="mt-1 text-sm text-gray-500">
+                        {formatDate(game.starts_at)}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        (window.location.href = `/wager/${game.id}`)
+                      }
+                      className="rounded-lg bg-gray-900 px-5 py-3 font-semibold text-white hover:bg-gray-700"
+                    >
+                      Place Wager
+                    </button>
+                  </div>
+
+                  <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg bg-gray-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-gray-500">
+                        Spread
+                      </p>
+
+                      <div className="mt-2 space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>{game.away_team}</span>
+                          <span className="font-semibold">
+                            {formatLine(game.spread)}{" "}
+                            {formatOdds(game.spread_odds_away)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span>{game.home_team}</span>
+                          <span className="font-semibold">
+                            {formatLine(game.spread_home)}{" "}
+                            {formatOdds(game.spread_odds_home)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-gray-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-gray-500">
+                        Total
+                      </p>
+
+                      <div className="mt-2 space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Over</span>
+                          <span className="font-semibold">
+                            {game.total ?? "—"}{" "}
+                            {formatOdds(game.total_odds_over)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span>Under</span>
+                          <span className="font-semibold">
+                            {game.total ?? "—"}{" "}
+                            {formatOdds(game.total_odds_under)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-gray-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-gray-500">
+                        Moneyline
+                      </p>
+
+                      <div className="mt-2 space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>{game.away_team}</span>
+                          <span className="font-semibold">
+                            {formatOdds(game.moneyline_away)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span>{game.home_team}</span>
+                          <span className="font-semibold">
+                            {formatOdds(game.moneyline_home)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm font-semibold text-gray-700">
+                    1 Unit Risked
+                  </p>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </main>
   );
-}   
+}

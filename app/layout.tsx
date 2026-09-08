@@ -2,7 +2,7 @@ import "./globals.css";
 import Header from "./header";
 
 export const metadata = {
-  title: "Friendly Wager",
+  title: "Parlay Money Machine",
   description: "Unfriendly competition for terrible gamblers.",
 };
 
