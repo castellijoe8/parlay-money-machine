@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState } from "react"; 
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Game = {
@@ -9,6 +8,9 @@ type Game = {
   away_team: string;
   home_team: string;
   starts_at: string;
+  status: string;
+  home_score: number | null;
+  away_score: number | null;
   spread: number | null;
   spread_home: number | null;
   spread_odds_away: number | null;
@@ -27,6 +29,17 @@ export default function HomePage() {
 
   useEffect(() => {
     loadGames();
+
+    const interval = setInterval(async () => {
+      try {
+        await fetch("/api/sync-scores");
+        await loadGames();
+      } catch (error) {
+        console.error("Score refresh error:", error);
+      }
+    }, 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   async function loadGames() {
@@ -36,9 +49,9 @@ export default function HomePage() {
     const { data, error } = await supabase
       .from("games")
       .select(
-        "id, away_team, home_team, starts_at, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
+        "id, away_team, home_team, starts_at, status, home_score, away_score, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
       )
-      .gte("starts_at", new Date().toISOString())
+      .in("status", ["scheduled", "live"])
       .order("starts_at", { ascending: true });
 
     if (error) {
@@ -48,7 +61,19 @@ export default function HomePage() {
       return;
     }
 
-    setGames(data ?? []);
+    const now = new Date();
+
+    const visibleGames = (data ?? []).filter((game) => {
+      const startTime = new Date(game.starts_at);
+
+      if (game.status === "live") {
+        return true;
+      }
+
+      return startTime >= now;
+    });
+
+    setGames(visibleGames);
     setLoading(false);
   }
 
@@ -76,6 +101,13 @@ export default function HomePage() {
     }
 
     return line > 0 ? `+${line}` : String(line);
+  }
+
+  function isLive(game: Game) {
+    return (
+      game.status === "live" ||
+      (game.away_score !== null && game.home_score !== null)
+    );
   }
 
   return (
@@ -111,115 +143,141 @@ export default function HomePage() {
               <p className="font-semibold text-gray-900">
                 No upcoming games
               </p>
+
               <p className="mt-1 text-sm text-gray-500">
                 Check back soon for new games.
               </p>
             </div>
           ) : (
             <div className="mt-6 space-y-4">
-              {games.map((game) => (
-                <div
-                  key={game.id}
-                  className="rounded-xl bg-white p-6 shadow-sm"
-                >
-                  <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900">
-                        {game.away_team} vs. {game.home_team}
-                      </h3>
+              {games.map((game) => {
+                const live = isLive(game);
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        {formatDate(game.starts_at)}
-                      </p>
+                return (
+                  <div
+                    key={game.id}
+                    className="rounded-xl bg-white p-6 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        {live ? (
+                          <div className="mb-2 inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-700">
+                            Live
+                          </div>
+                        ) : null}
+
+                        <h3 className="text-xl font-bold text-gray-900">
+                          {game.away_team} vs. {game.home_team}
+                        </h3>
+
+                        {live ? (
+                          <div className="mt-2 text-2xl font-bold text-gray-900">
+                            {game.away_score ?? 0} —{" "}
+                            {game.home_score ?? 0}
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-sm text-gray-500">
+                            {formatDate(game.starts_at)}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          (window.location.href = `/wager/${game.id}`)
+                        }
+                        className="rounded-lg bg-gray-900 px-5 py-3 font-semibold text-white hover:bg-gray-700"
+                      >
+                        Place Wager
+                      </button>
                     </div>
 
-                    <button
-                      onClick={() =>
-                        (window.location.href = `/wager/${game.id}`)
-                      }
-                      className="rounded-lg bg-gray-900 px-5 py-3 font-semibold text-white hover:bg-gray-700"
-                    >
-                      Place Wager
-                    </button>
+                    <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="rounded-lg bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase text-gray-500">
+                          Spread
+                        </p>
+
+                        <div className="mt-2 space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span>{game.away_team}</span>
+
+                            <span className="font-semibold">
+                              {formatLine(game.spread)}{" "}
+                              {formatOdds(game.spread_odds_away)}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between">
+                            <span>{game.home_team}</span>
+
+                            <span className="font-semibold">
+                              {formatLine(game.spread_home)}{" "}
+                              {formatOdds(game.spread_odds_home)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase text-gray-500">
+                          Total
+                        </p>
+
+                        <div className="mt-2 space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span>Over</span>
+
+                            <span className="font-semibold">
+                              {game.total ?? "—"}{" "}
+                              {formatOdds(game.total_odds_over)}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between">
+                            <span>Under</span>
+
+                            <span className="font-semibold">
+                              {game.total ?? "—"}{" "}
+                              {formatOdds(game.total_odds_under)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase text-gray-500">
+                          Moneyline
+                        </p>
+
+                        <div className="mt-2 space-y-1 text-sm">
+                          <div className="mt-2 space-y-1 text-sm">
+                            <div className="flex justify-between">
+                              <span>{game.away_team}</span>
+
+                              <span className="font-semibold">
+                                {formatOdds(game.moneyline_away)}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between">
+                              <span>{game.home_team}</span>
+
+                              <span className="font-semibold">
+                                {formatOdds(game.moneyline_home)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="mt-4 text-sm font-semibold text-gray-700">
+                      1 Unit Risked
+                    </p>
                   </div>
-
-                  <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="rounded-lg bg-gray-50 p-4">
-                      <p className="text-xs font-semibold uppercase text-gray-500">
-                        Spread
-                      </p>
-
-                      <div className="mt-2 space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>{game.away_team}</span>
-                          <span className="font-semibold">
-                            {formatLine(game.spread)}{" "}
-                            {formatOdds(game.spread_odds_away)}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between">
-                          <span>{game.home_team}</span>
-                          <span className="font-semibold">
-                            {formatLine(game.spread_home)}{" "}
-                            {formatOdds(game.spread_odds_home)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg bg-gray-50 p-4">
-                      <p className="text-xs font-semibold uppercase text-gray-500">
-                        Total
-                      </p>
-
-                      <div className="mt-2 space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>Over</span>
-                          <span className="font-semibold">
-                            {game.total ?? "—"}{" "}
-                            {formatOdds(game.total_odds_over)}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between">
-                          <span>Under</span>
-                          <span className="font-semibold">
-                            {game.total ?? "—"}{" "}
-                            {formatOdds(game.total_odds_under)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg bg-gray-50 p-4">
-                      <p className="text-xs font-semibold uppercase text-gray-500">
-                        Moneyline
-                      </p>
-
-                      <div className="mt-2 space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>{game.away_team}</span>
-                          <span className="font-semibold">
-                            {formatOdds(game.moneyline_away)}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between">
-                          <span>{game.home_team}</span>
-                          <span className="font-semibold">
-                            {formatOdds(game.moneyline_home)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 text-sm font-semibold text-gray-700">
-                    1 Unit Risked
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
