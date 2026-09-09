@@ -58,15 +58,48 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-2 py-2 sm:px-6 sm:py-4">
-        <Link
-          href="/"
-          className="brand-font text-xl font-bold tracking-wide text-green-900 sm:text-3xl"
-        >
-          Parlay Money Machine
-        </Link>
+      <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 sm:py-4">
 
-        <nav className="flex items-center gap-2 text-xs font-semibold sm:gap-6 sm:text-sm">
+        {/* Top row on mobile / single row on desktop */}
+        <div className="flex items-center justify-between">
+
+          <Link
+            href="/"
+            className="brand-font text-2xl font-bold tracking-wide text-green-900 sm:text-3xl"
+          >
+            Parlay Money Machine
+          </Link>
+
+          {email && (
+            <div className="flex items-center gap-2 sm:gap-4">
+              <Link
+                href="/profile"
+                className="max-w-[120px] truncate text-sm font-semibold text-gray-600 transition hover:text-gray-900 sm:max-w-[180px] sm:text-sm"
+              >
+                {displayName || email}
+              </Link>
+
+              <button
+                onClick={signOut}
+                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-700 sm:px-4"
+              >
+                Sign Out
+              </button>
+            </div>
+          )}
+
+          {!email && (
+            <Link
+              href="/login"
+              className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-700 sm:px-4"
+            >
+              Sign In
+            </Link>
+          )}
+        </div>
+
+        {/* Navigation */}
+        <nav className="mt-3 flex items-center justify-center gap-4 text-sm font-semibold sm:absolute sm:left-1/2 sm:mt-0 sm:-translate-x-1/2 sm:gap-6">
           <Link
             href="/"
             className="text-gray-600 transition hover:text-gray-900"
@@ -94,32 +127,8 @@ export default function Header() {
           >
             Leaderboard
           </Link>
-
-          {email ? (
-            <>
-              <Link
-                href="/profile"
-                className="max-w-[70px] truncate text-gray-500 transition hover:text-gray-900 sm:max-w-[180px]"
-              >
-                {displayName || email}
-              </Link>
-
-              <button
-                onClick={signOut}
-                className="rounded-lg bg-gray-900 px-2 py-1.5 text-xs text-white transition hover:bg-gray-700 sm:px-4 sm:py-2 sm:text-sm"
-              >
-                Sign Out
-              </button>
-            </>
-          ) : (
-            <Link
-              href="/login"
-              className="rounded-lg bg-gray-900 px-2 py-1.5 text-xs text-white transition hover:bg-gray-700 sm:px-4 sm:py-2 sm:text-sm"
-            >
-              Sign In
-            </Link>
-          )}
         </nav>
+
       </div>
     </header>
   );
