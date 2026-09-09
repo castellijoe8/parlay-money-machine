@@ -58,7 +58,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-3 py-3 sm:px-6 sm:py-4">
         <Link
           href="/"
           className="brand-font text-3xl font-bold tracking-wide text-green-900"
@@ -66,7 +66,7 @@ export default function Header() {
           Parlay Money Machine
         </Link>
 
-        <nav className="flex items-center gap-6 text-sm font-semibold">
+        <nav className="flex items-center gap-3 text-sm font-semibold sm:gap-6">
           <Link
             href="/"
             className="text-gray-600 transition hover:text-gray-900"
@@ -99,14 +99,14 @@ export default function Header() {
             <>
               <Link
                 href="/profile"
-                className="hidden max-w-[180px] truncate text-gray-500 transition hover:text-gray-900 lg:inline"
+                className="max-w-[120px] truncate text-gray-500 transition hover:text-gray-900 sm:max-w-[180px]"
               >
                 {displayName || email}
               </Link>
 
               <button
                 onClick={signOut}
-                className="rounded-lg bg-gray-900 px-4 py-2 text-white transition hover:bg-gray-700"
+                className="rounded-lg bg-gray-900 px-3 py-2 text-white transition hover:bg-gray-700 sm:px-4"
               >
                 Sign Out
               </button>
@@ -114,7 +114,7 @@ export default function Header() {
           ) : (
             <Link
               href="/login"
-              className="rounded-lg bg-gray-900 px-4 py-2 text-white transition hover:bg-gray-700"
+              className="rounded-lg bg-gray-900 px-3 py-2 text-white transition hover:bg-gray-700 sm:px-4"
             >
               Sign In
             </Link>
