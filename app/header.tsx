@@ -61,7 +61,7 @@ export default function Header() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link
           href="/"
-          className="brand-font text-5xl font-bold tracking-wide text-green-900"
+          className="brand-font text-3xl font-bold tracking-wide text-green-900"
         >
           Parlay Money Machine
         </Link>
