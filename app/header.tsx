@@ -58,15 +58,15 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-3 py-3 sm:px-6 sm:py-4">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-2 py-2 sm:px-6 sm:py-4">
         <Link
           href="/"
-          className="brand-font text-3xl font-bold tracking-wide text-green-900"
+          className="brand-font text-xl font-bold tracking-wide text-green-900 sm:text-3xl"
         >
           Parlay Money Machine
         </Link>
 
-        <nav className="flex items-center gap-3 text-sm font-semibold sm:gap-6">
+        <nav className="flex items-center gap-2 text-xs font-semibold sm:gap-6 sm:text-sm">
           <Link
             href="/"
             className="text-gray-600 transition hover:text-gray-900"
@@ -99,14 +99,14 @@ export default function Header() {
             <>
               <Link
                 href="/profile"
-                className="max-w-[120px] truncate text-gray-500 transition hover:text-gray-900 sm:max-w-[180px]"
+                className="max-w-[70px] truncate text-gray-500 transition hover:text-gray-900 sm:max-w-[180px]"
               >
                 {displayName || email}
               </Link>
 
               <button
                 onClick={signOut}
-                className="rounded-lg bg-gray-900 px-3 py-2 text-white transition hover:bg-gray-700 sm:px-4"
+                className="rounded-lg bg-gray-900 px-2 py-1.5 text-xs text-white transition hover:bg-gray-700 sm:px-4 sm:py-2 sm:text-sm"
               >
                 Sign Out
               </button>
@@ -114,7 +114,7 @@ export default function Header() {
           ) : (
             <Link
               href="/login"
-              className="rounded-lg bg-gray-900 px-3 py-2 text-white transition hover:bg-gray-700 sm:px-4"
+              className="rounded-lg bg-gray-900 px-2 py-1.5 text-xs text-white transition hover:bg-gray-700 sm:px-4 sm:py-2 sm:text-sm"
             >
               Sign In
             </Link>
