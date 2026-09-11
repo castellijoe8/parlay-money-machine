@@ -91,10 +91,18 @@ export default function WagersPage() {
     (wager) => wager.result?.toLowerCase() === "loss"
   ).length;
 
+  const pushes = completedWagers.filter(
+    (wager) => wager.result?.toLowerCase() === "push"
+  ).length;
+
   const netUnits = completedWagers.reduce(
     (total, wager) => total + Number(wager.units ?? 0),
     0
   );
+
+  const decidedWagers = wins + losses;
+  const winRate =
+    decidedWagers > 0 ? Math.round((wins / decidedWagers) * 100) : 0;
 
   function formatDate(date: string) {
     return new Date(date).toLocaleString([], {
@@ -123,17 +131,13 @@ export default function WagersPage() {
 
     if (wager.line !== null && wager.line !== undefined) {
       parts.push(
-        wager.line > 0
-          ? `+${wager.line}`
-          : String(wager.line)
+        wager.line > 0 ? `+${wager.line}` : String(wager.line)
       );
     }
 
     if (wager.odds !== null && wager.odds !== undefined) {
       parts.push(
-        wager.odds > 0
-          ? `+${wager.odds}`
-          : String(wager.odds)
+        wager.odds > 0 ? `+${wager.odds}` : String(wager.odds)
       );
     }
 
@@ -144,58 +148,82 @@ export default function WagersPage() {
     const value = Number(units ?? 0);
 
     if (value > 0) {
-      return `+${value.toFixed(2)} Units`;
+      return `+${value.toFixed(2)}`;
     }
 
-    return `${value.toFixed(2)} Units`;
+    return value.toFixed(2);
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 px-6 py-8">
+    <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-4xl">
-        <h1 className="text-3xl font-bold text-gray-900">
-          My Wagers
-        </h1>
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+            My Bets
+          </h1>
 
-        <p className="mt-1 text-gray-500">
-          Track your wagers and record.
-        </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Track your wagers, results, and units.
+          </p>
+        </div>
 
         {loading ? (
-          <div className="mt-8 rounded-xl bg-white p-6 shadow-sm">
-            <p className="text-gray-500">
-              Loading your wagers...
-            </p>
+          <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
+            <p className="text-gray-500">Loading your wagers...</p>
           </div>
         ) : message ? (
-          <div className="mt-8 rounded-xl bg-white p-6 shadow-sm">
+          <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
             <p className="text-gray-500">{message}</p>
           </div>
         ) : (
           <>
-            <div className="mt-6 grid grid-cols-3 gap-4">
-              <div className="rounded-xl bg-white p-5 shadow-sm">
-                <p className="text-sm text-gray-500">
+            {/* Summary */}
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
                   Record
                 </p>
 
-                <p className="mt-1 text-2xl font-bold">
+                <p className="mt-1 text-2xl font-bold text-gray-900">
                   {wins}–{losses}
+                  {pushes > 0 && (
+                    <span className="text-lg text-gray-400">
+                      {" "}
+                      – {pushes}
+                    </span>
+                  )}
                 </p>
               </div>
 
-              <div className="rounded-xl bg-white p-5 shadow-sm">
-                <p className="text-sm text-gray-500">
-                  Wagers
+              <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                  Win Rate
                 </p>
 
-                <p className="mt-1 text-2xl font-bold">
+                <p className="mt-1 text-2xl font-bold text-gray-900">
+                  {winRate}%
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                  Bets
+                </p>
+
+                <p className="mt-1 text-2xl font-bold text-gray-900">
                   {wagers.length}
                 </p>
+
+                {pendingWagers.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    {pendingWagers.length} pending
+                  </p>
+                )}
               </div>
 
-              <div className="rounded-xl bg-white p-5 shadow-sm">
-                <p className="text-sm text-gray-500">
+              <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
                   Net Units
                 </p>
 
@@ -214,15 +242,24 @@ export default function WagersPage() {
               </div>
             </div>
 
+            {/* Pending */}
             <section className="mt-8">
-              <h2 className="text-xl font-bold text-gray-900">
-                Pending Wagers
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">
+                  Pending
+                </h2>
+
+                {pendingWagers.length > 0 && (
+                  <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800">
+                    {pendingWagers.length}
+                  </span>
+                )}
+              </div>
 
               {pendingWagers.length === 0 ? (
-                <div className="mt-3 rounded-xl bg-white p-5 shadow-sm">
-                  <p className="text-gray-500">
-                    No pending wagers.
+                <div className="mt-3 rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
+                  <p className="text-sm text-gray-500">
+                    No pending bets.
                   </p>
                 </div>
               ) : (
@@ -230,42 +267,51 @@ export default function WagersPage() {
                   {pendingWagers.map((wager) => (
                     <div
                       key={wager.id}
-                      className="rounded-xl bg-white p-5 shadow-sm"
+                      className="overflow-hidden rounded-2xl bg-white shadow-sm"
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">
-                            {gameName(wager)}
-                          </h3>
+                      <div className="border-l-4 border-yellow-400 p-4 sm:p-5">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <h3 className="truncate font-bold text-gray-900">
+                              {gameName(wager)}
+                            </h3>
 
-                          {wager.game && (
-                            <p className="mt-1 text-sm text-gray-500">
-                              {formatDate(wager.game.starts_at)}
-                            </p>
-                          )}
+                            {wager.game && (
+                              <p className="mt-1 text-xs text-gray-500">
+                                {formatDate(wager.game.starts_at)}
+                              </p>
+                            )}
 
-                          <p className="mt-3 text-sm text-gray-700">
-                            Pick:{" "}
-                            <span className="font-semibold">
-                              {wager.pick}
+                            <div className="mt-4">
+                              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                                Your Pick
+                              </p>
+
+                              <p className="mt-0.5 text-base font-bold text-gray-900">
+                                {wager.pick}
+                              </p>
+
+                              {wagerDetails(wager) && (
+                                <p className="mt-0.5 text-sm text-gray-500">
+                                  {wagerDetails(wager)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <span className="inline-flex rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800">
+                              Pending
                             </span>
-                          </p>
 
-                          {wagerDetails(wager) && (
-                            <p className="mt-1 text-sm text-gray-500">
-                              {wagerDetails(wager)}
+                            <p className="mt-3 text-sm font-semibold text-gray-700">
+                              1.00
                             </p>
-                          )}
 
-                          <p className="mt-3 font-semibold text-gray-900">
-                            1 Unit Risked
-                          </p>
-                        </div>
-
-                        <div className="text-right">
-                          <span className="inline-block rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-800">
-                            Pending
-                          </span>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                              Unit Risk
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -274,64 +320,90 @@ export default function WagersPage() {
               )}
             </section>
 
+            {/* Completed */}
             <section className="mt-10">
-              <h2 className="text-xl font-bold text-gray-900">
-                Completed Wagers
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">
+                  Completed
+                </h2>
+
+                {completedWagers.length > 0 && (
+                  <span className="text-xs font-medium text-gray-400">
+                    {completedWagers.length} bets
+                  </span>
+                )}
+              </div>
 
               {completedWagers.length === 0 ? (
-                <div className="mt-3 rounded-xl bg-white p-5 shadow-sm">
-                  <p className="text-gray-500">
-                    No completed wagers yet.
+                <div className="mt-3 rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
+                  <p className="text-sm text-gray-500">
+                    No completed bets yet.
                   </p>
                 </div>
               ) : (
-                <div className="mt-3 space-y-3">
+                <div className="mt-3 space-y-2">
                   {completedWagers.map((wager) => {
-                    const result =
-                      wager.result?.toLowerCase();
-
+                    const result = wager.result?.toLowerCase();
                     const won = result === "win";
                     const pushed = result === "push";
 
                     return (
                       <div
                         key={wager.id}
-                        className="rounded-xl bg-white p-5 shadow-sm"
+                        className={`overflow-hidden rounded-2xl bg-white shadow-sm ${
+                          won
+                            ? "border-l-4 border-green-500"
+                            : pushed
+                            ? "border-l-4 border-gray-300"
+                            : "border-l-4 border-red-500"
+                        }`}
                       >
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <h3 className="font-semibold text-gray-900">
-                              {gameName(wager)}
-                            </h3>
+                        <div className="p-4 sm:p-5">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                              <h3 className="truncate font-bold text-gray-900">
+                                {gameName(wager)}
+                              </h3>
 
-                            <p className="mt-1 text-sm text-gray-500">
-                              Pick: {wager.pick}
-                            </p>
+                              <p className="mt-1 text-sm text-gray-600">
+                                <span className="font-medium">
+                                  {wager.pick}
+                                </span>
 
-                            {wagerDetails(wager) && (
-                              <p className="mt-1 text-sm text-gray-500">
-                                {wagerDetails(wager)}
+                                {wagerDetails(wager) && (
+                                  <span className="text-gray-400">
+                                    {" "}
+                                    · {wagerDetails(wager)}
+                                  </span>
+                                )}
                               </p>
-                            )}
-                          </div>
+                            </div>
 
-                          <div className="text-right">
-                            <p className="font-bold">
-                              {formatUnits(wager.units)}
-                            </p>
+                            <div className="shrink-0 text-right">
+                              <p
+                                className={`text-lg font-bold ${
+                                  won
+                                    ? "text-green-600"
+                                    : pushed
+                                    ? "text-gray-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {formatUnits(wager.units)}
+                              </p>
 
-                            <span
-                              className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-medium ${
-                                won
-                                  ? "bg-green-100 text-green-800"
-                                  : pushed
-                                  ? "bg-gray-100 text-gray-700"
-                                  : "bg-red-100 text-red-800"
-                              }`}
-                            >
-                              {wager.result}
-                            </span>
+                              <span
+                                className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${
+                                  won
+                                    ? "bg-green-100 text-green-800"
+                                    : pushed
+                                    ? "bg-gray-100 text-gray-600"
+                                    : "bg-red-100 text-red-800"
+                                }`}
+                              >
+                                {wager.result}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
