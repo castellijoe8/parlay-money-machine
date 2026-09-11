@@ -62,9 +62,11 @@ export async function GET() {
     })
     .eq("key", "scores");
 
-  // Pull NCAAF scores.
+  // Pull NCAAF scores from the last 3 days.
+  // This ensures recently completed games remain available
+  // for final-score updates and wager settlement.
   const response = await fetch(
-    `https://api.the-odds-api.com/v4/sports/americanfootball_ncaaf/scores/?apiKey=${apiKey}`,
+    `https://api.the-odds-api.com/v4/sports/americanfootball_ncaaf/scores/?apiKey=${apiKey}&daysFrom=3`,
     {
       cache: "no-store",
     }
@@ -134,8 +136,7 @@ export async function GET() {
       continue;
     }
 
-    // The Odds API can return games that we haven't imported into
-    // our database yet. That's normal, so just skip those games.
+    // The Odds API can return games that aren't in our database yet.
     if (!updatedGame) {
       gamesNotInDatabase++;
       continue;
