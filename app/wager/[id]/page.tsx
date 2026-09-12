@@ -99,11 +99,17 @@ export default function WagerPage() {
     return new Date(game.starts_at).getTime() <= Date.now();
   }
 
+  function showWageringClosed() {
+    setMessage(
+      "Wagering is closed. This game has already started."
+    );
+    setSelectedBet(null);
+    setSaving(false);
+  }
+
   function selectBet(option: BetOption) {
     if (isGameStarted()) {
-      setMessage(
-        "Wagering is closed. This game has already started."
-      );
+      showWageringClosed();
       return;
     }
 
@@ -119,15 +125,9 @@ export default function WagerPage() {
     setSaving(true);
     setMessage("");
 
-    // Final cutoff check immediately before saving.
-    // This protects against someone leaving this page open
-    // until after the game starts.
+    // Final client-side cutoff check immediately before saving.
     if (isGameStarted()) {
-      setMessage(
-        "Wagering is closed. This game has already started."
-      );
-      setSelectedBet(null);
-      setSaving(false);
+      showWageringClosed();
       return;
     }
 
@@ -147,15 +147,9 @@ export default function WagerPage() {
       .eq("id", user.id)
       .maybeSingle();
 
-    // Check one more time immediately before the insert.
-    // This minimizes the possibility of a wager slipping through
-    // if kickoff occurs while the request is being processed.
+    // One more client-side check immediately before the insert.
     if (isGameStarted()) {
-      setMessage(
-        "Wagering is closed. This game has already started."
-      );
-      setSelectedBet(null);
-      setSaving(false);
+      showWageringClosed();
       return;
     }
 
@@ -173,6 +167,19 @@ export default function WagerPage() {
 
     if (error) {
       console.error(error);
+
+      // The database trigger is the final authority.
+      // If kickoff happened while the request was processing,
+      // show the same friendly message as the frontend cutoff.
+      if (
+        error.message
+          ?.toLowerCase()
+          .includes("wagering is closed")
+      ) {
+        showWageringClosed();
+        return;
+      }
+
       setMessage("Unable to place wager. Please try again.");
       setSaving(false);
       return;
@@ -429,7 +436,13 @@ export default function WagerPage() {
             )}
 
             {message && (
-              <div className="mt-4 rounded-lg bg-gray-100 p-4 text-sm text-gray-700">
+              <div
+                className={`mt-4 rounded-lg p-4 text-sm ${
+                  message.toLowerCase().includes("wagering is closed")
+                    ? "border border-red-200 bg-red-50 text-red-700"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
                 {message}
               </div>
             )}
