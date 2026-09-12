@@ -14,24 +14,27 @@ type Wager = {
   units: number | null;
   created_at: string;
   game: {
-    away_team: string;
-    home_team: string;
-    starts_at: string;
+    away_team: string | null;
+    home_team: string | null;
+    starts_at: string | null;
   } | null;
 };
 
-type SortOption =
-  | "newest"
-  | "oldest"
-  | "biggest-win"
-  | "biggest-loss";
+type ResultFilter = "all" | "pending" | "wins" | "losses" | "pushes";
+type TimeFilter = "all" | "week" | "month" | "season";
+type BetTypeFilter = "all" | "spread" | "moneyline" | "total";
+type SortOption = "newest" | "oldest" | "biggest-win" | "biggest-loss";
 
 export default function WagersPage() {
   const [wagers, setWagers] = useState<Wager[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [sortOption, setSortOption] =
-    useState<SortOption>("newest");
+
+  const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [betTypeFilter, setBetTypeFilter] =
+    useState<BetTypeFilter>("all");
+  const [sortOption, setSortOption] = useState<SortOption>("newest");
 
   useEffect(() => {
     loadWagers();
@@ -43,17 +46,19 @@ export default function WagersPage() {
 
     const {
       data: { user },
+      error: userError,
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      setMessage("Please sign in to view your wagers.");
+    if (userError || !user) {
+      setMessage("Please log in to view your bets.");
       setLoading(false);
       return;
     }
 
     const { data, error } = await supabase
       .from("picks")
-      .select(`
+      .select(
+        `
         id,
         user_id,
         pick,
@@ -68,60 +73,250 @@ export default function WagersPage() {
           home_team,
           starts_at
         )
-      `)
+      `
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Picks error:", error);
-      setMessage("Unable to load your wagers.");
+      console.error("Error loading wagers:", error);
+      setMessage("Unable to load your bets.");
       setLoading(false);
       return;
     }
 
-    setWagers((data ?? []) as unknown as Wager[]);
+    setWagers((data as unknown as Wager[]) || []);
     setLoading(false);
   }
 
-  const pendingWagers = wagers.filter(
-    (wager) =>
-      !wager.result ||
-      wager.result.toLowerCase() === "pending"
+  const pending = useMemo(
+    () =>
+      wagers.filter(
+        (wager) =>
+          !wager.result ||
+          wager.result.toLowerCase() === "pending"
+      ),
+    [wagers]
   );
 
-  const completedWagers = wagers.filter(
-    (wager) =>
-      wager.result &&
-      wager.result.toLowerCase() !== "pending"
+  const completed = useMemo(
+    () =>
+      wagers.filter(
+        (wager) =>
+          wager.result &&
+          wager.result.toLowerCase() !== "pending"
+      ),
+    [wagers]
   );
 
-  const wins = completedWagers.filter(
-    (wager) => wager.result?.toLowerCase() === "win"
-  ).length;
-
-  const losses = completedWagers.filter(
-    (wager) => wager.result?.toLowerCase() === "loss"
-  ).length;
-
-  const pushes = completedWagers.filter(
-    (wager) => wager.result?.toLowerCase() === "push"
-  ).length;
-
-  const netUnits = completedWagers.reduce(
-    (total, wager) =>
-      total + Number(wager.units ?? 0),
-    0
+  const wins = useMemo(
+    () =>
+      completed.filter(
+        (wager) => wager.result?.toLowerCase() === "win"
+      ),
+    [completed]
   );
 
-  const decidedWagers = wins + losses;
+  const losses = useMemo(
+    () =>
+      completed.filter(
+        (wager) => wager.result?.toLowerCase() === "loss"
+      ),
+    [completed]
+  );
 
-  const winRate =
-    decidedWagers > 0
-      ? Math.round((wins / decidedWagers) * 100)
-      : 0;
+  const pushes = useMemo(
+    () =>
+      completed.filter(
+        (wager) => wager.result?.toLowerCase() === "push"
+      ),
+    [completed]
+  );
+
+  const netUnits = useMemo(
+    () =>
+      completed.reduce(
+        (sum, wager) => sum + (wager.units ?? 0),
+        0
+      ),
+    [completed]
+  );
+
+  const decisions = wins.length + losses.length;
+  const winRate = decisions > 0 ? (wins.length / decisions) * 100 : 0;
+
+  const currentStreak = useMemo(() => {
+    const sorted = [...completed].sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime()
+    );
+
+    if (sorted.length === 0) {
+      return {
+        type: null as "win" | "loss" | "push" | null,
+        count: 0,
+      };
+    }
+
+    const firstResult = sorted[0].result?.toLowerCase();
+
+    if (
+      firstResult !== "win" &&
+      firstResult !== "loss" &&
+      firstResult !== "push"
+    ) {
+      return {
+        type: null as "win" | "loss" | "push" | null,
+        count: 0,
+      };
+    }
+
+    let count = 0;
+
+    for (const wager of sorted) {
+      const result = wager.result?.toLowerCase();
+
+      if (result === firstResult) {
+        count++;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      type: firstResult,
+      count,
+    };
+  }, [completed]);
+
+  function getStartOfWeek() {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+
+    const start = new Date(now);
+    start.setDate(now.getDate() + diff);
+    start.setHours(0, 0, 0, 0);
+
+    return start;
+  }
+
+  function getStartOfMonth() {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  function getStartOfSeason() {
+    const now = new Date();
+
+    // For the app's current sports season, use the current calendar year.
+    return new Date(now.getFullYear(), 0, 1);
+  }
+
+  function matchesTimeFilter(wager: Wager) {
+    if (timeFilter === "all") return true;
+
+    const wagerDate = new Date(wager.created_at);
+
+    if (timeFilter === "week") {
+      return wagerDate >= getStartOfWeek();
+    }
+
+    if (timeFilter === "month") {
+      return wagerDate >= getStartOfMonth();
+    }
+
+    if (timeFilter === "season") {
+      return wagerDate >= getStartOfSeason();
+    }
+
+    return true;
+  }
+
+  function normalizeBetType(type: string | null) {
+    if (!type) return "";
+
+    const normalized = type.toLowerCase();
+
+    if (
+      normalized.includes("spread") ||
+      normalized === "ats"
+    ) {
+      return "spread";
+    }
+
+    if (
+      normalized.includes("moneyline") ||
+      normalized === "ml"
+    ) {
+      return "moneyline";
+    }
+
+    if (
+      normalized.includes("total") ||
+      normalized === "over" ||
+      normalized === "under"
+    ) {
+      return "total";
+    }
+
+    return normalized;
+  }
+
+  function matchesBetTypeFilter(wager: Wager) {
+    if (betTypeFilter === "all") return true;
+
+    return normalizeBetType(wager.bet_type) === betTypeFilter;
+  }
+
+  function matchesResultFilter(wager: Wager) {
+    const result = wager.result?.toLowerCase();
+
+    if (resultFilter === "all") return true;
+
+    if (resultFilter === "pending") {
+      return !result || result === "pending";
+    }
+
+    if (resultFilter === "wins") return result === "win";
+    if (resultFilter === "losses") return result === "loss";
+    if (resultFilter === "pushes") return result === "push";
+
+    return true;
+  }
+
+  const filteredWagers = useMemo(() => {
+    return wagers.filter(
+      (wager) =>
+        matchesTimeFilter(wager) &&
+        matchesBetTypeFilter(wager) &&
+        matchesResultFilter(wager)
+    );
+  }, [wagers, timeFilter, betTypeFilter, resultFilter]);
+
+  const filteredPending = useMemo(
+    () =>
+      filteredWagers.filter(
+        (wager) =>
+          !wager.result ||
+          wager.result.toLowerCase() === "pending"
+      ),
+    [filteredWagers]
+  );
+
+  const filteredCompleted = useMemo(
+    () =>
+      filteredWagers.filter(
+        (wager) =>
+          wager.result &&
+          wager.result.toLowerCase() !== "pending"
+      ),
+    [filteredWagers]
+  );
 
   const sortedCompletedWagers = useMemo(() => {
-    const sorted = [...completedWagers];
+    const sorted = [...filteredCompleted];
 
     switch (sortOption) {
       case "oldest":
@@ -133,16 +328,12 @@ export default function WagersPage() {
 
       case "biggest-win":
         return sorted.sort(
-          (a, b) =>
-            Number(b.units ?? 0) -
-            Number(a.units ?? 0)
+          (a, b) => (b.units ?? 0) - (a.units ?? 0)
         );
 
       case "biggest-loss":
         return sorted.sort(
-          (a, b) =>
-            Number(a.units ?? 0) -
-            Number(b.units ?? 0)
+          (a, b) => (a.units ?? 0) - (b.units ?? 0)
         );
 
       case "newest":
@@ -153,11 +344,26 @@ export default function WagersPage() {
             new Date(a.created_at).getTime()
         );
     }
-  }, [completedWagers, sortOption]);
+  }, [filteredCompleted, sortOption]);
 
-  function formatDate(date: string) {
-    return new Date(date).toLocaleString([], {
-      weekday: "short",
+  function formatDate(dateString: string | null) {
+    if (!dateString) return "Date unavailable";
+
+    const date = new Date(dateString);
+
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  function formatGameDate(dateString: string | null) {
+    if (!dateString) return "";
+
+    const date = new Date(dateString);
+
+    return date.toLocaleString(undefined, {
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -166,11 +372,14 @@ export default function WagersPage() {
   }
 
   function gameName(wager: Wager) {
-    if (!wager.game) {
-      return "Game unavailable";
+    const away = wager.game?.away_team;
+    const home = wager.game?.home_team;
+
+    if (away && home) {
+      return `${away} vs ${home}`;
     }
 
-    return `${wager.game.away_team} vs. ${wager.game.home_team}`;
+    return "Game";
   }
 
   function wagerDetails(wager: Wager) {
@@ -180,39 +389,109 @@ export default function WagersPage() {
       parts.push(wager.bet_type);
     }
 
-    if (
-      wager.line !== null &&
-      wager.line !== undefined
-    ) {
+    if (wager.line !== null && wager.line !== undefined) {
       parts.push(
-        wager.line > 0
-          ? `+${wager.line}`
-          : String(wager.line)
+        `${wager.line > 0 ? "+" : ""}${wager.line}`
       );
     }
 
-    if (
-      wager.odds !== null &&
-      wager.odds !== undefined
-    ) {
+    if (wager.odds !== null && wager.odds !== undefined) {
       parts.push(
-        wager.odds > 0
-          ? `+${wager.odds}`
-          : String(wager.odds)
+        `${wager.odds > 0 ? "+" : ""}${wager.odds}`
       );
     }
 
-    return parts.join(" ");
+    return parts.join(" • ");
   }
 
   function formatUnits(units: number | null) {
-    const value = Number(units ?? 0);
+    if (units === null || units === undefined) return "0.00u";
 
-    if (value > 0) {
-      return `+${value.toFixed(2)}`;
+    const sign = units > 0 ? "+" : "";
+
+    return `${sign}${units.toFixed(2)}u`;
+  }
+
+  function resultLabel(result: string | null) {
+    if (!result || result.toLowerCase() === "pending") {
+      return "PENDING";
     }
 
-    return value.toFixed(2);
+    return result.toUpperCase();
+  }
+
+  function resultClass(result: string | null) {
+    const normalized = result?.toLowerCase();
+
+    if (normalized === "win") {
+      return "border-l-4 border-l-green-500";
+    }
+
+    if (normalized === "loss") {
+      return "border-l-4 border-l-red-500";
+    }
+
+    if (normalized === "push") {
+      return "border-l-4 border-l-gray-400";
+    }
+
+    return "border-l-4 border-l-yellow-400";
+  }
+
+  function resultBadgeClass(result: string | null) {
+    const normalized = result?.toLowerCase();
+
+    if (normalized === "win") {
+      return "bg-green-100 text-green-700";
+    }
+
+    if (normalized === "loss") {
+      return "bg-red-100 text-red-700";
+    }
+
+    if (normalized === "push") {
+      return "bg-gray-100 text-gray-700";
+    }
+
+    return "bg-yellow-100 text-yellow-800";
+  }
+
+  function streakDisplay() {
+    if (!currentStreak.type || currentStreak.count === 0) {
+      return {
+        label: "—",
+        detail: "No completed bets",
+        className: "text-gray-500",
+      };
+    }
+
+    if (currentStreak.type === "win") {
+      return {
+        label: `🔥 ${currentStreak.count}W`,
+        detail:
+          currentStreak.count === 1
+            ? "Current streak"
+            : "Winning streak",
+        className: "text-green-600",
+      };
+    }
+
+    if (currentStreak.type === "loss") {
+      return {
+        label: `❄️ ${currentStreak.count}L`,
+        detail:
+          currentStreak.count === 1
+            ? "Current streak"
+            : "Losing streak",
+        className: "text-red-600",
+      };
+    }
+
+    return {
+      label: `${currentStreak.count}P`,
+      detail: "Push streak",
+      className: "text-gray-600",
+    };
   }
 
   function sortLabel() {
@@ -229,341 +508,426 @@ export default function WagersPage() {
     }
   }
 
+  const streak = streakDisplay();
+
   return (
-    <main className="min-h-screen bg-gray-50 px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-4xl">
+    <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mb-6">
+        <h1 className="text-3xl font-black tracking-tight">
+          My Bets
+        </h1>
 
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            My Bets
-          </h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Your complete betting history and performance.
+        </p>
+      </div>
 
-          <p className="mt-1 text-sm text-gray-500">
-            Track your wagers, results, and units.
-          </p>
+      {message && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {message}
+        </div>
+      )}
+
+      {/* Performance Summary */}
+      <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Record
+          </div>
+          <div className="mt-2 text-2xl font-black">
+            {wins.length}-{losses.length}-{pushes.length}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            W-L-P
+          </div>
         </div>
 
-        {loading ? (
-          <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <p className="text-gray-500">
-              Loading your wagers...
-            </p>
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Win Rate
           </div>
-        ) : message ? (
-          <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <p className="text-gray-500">
-              {message}
-            </p>
+          <div className="mt-2 text-2xl font-black">
+            {winRate.toFixed(0)}%
           </div>
-        ) : (
-          <>
-            {/* Stats */}
-            <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-6 sm:grid-cols-4 sm:gap-3">
+          <div className="mt-1 text-xs text-gray-400">
+            Decided bets
+          </div>
+        </div>
 
-              {/* Record */}
-              <div className="rounded-2xl bg-white p-3.5 shadow-sm sm:p-5">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
-                  Record
-                </p>
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Bets
+          </div>
+          <div className="mt-2 text-2xl font-black">
+            {wagers.length}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            Total wagers
+          </div>
+        </div>
 
-                <p className="mt-1 text-xl font-extrabold text-gray-900 sm:text-2xl">
-                  {wins}–{losses}
-                  {pushes > 0 && (
-                    <span className="text-base text-gray-400 sm:text-lg">
-                      {" "}– {pushes}
-                    </span>
-                  )}
-                </p>
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Net Units
+          </div>
+          <div
+            className={`mt-2 text-2xl font-black ${
+              netUnits > 0
+                ? "text-green-600"
+                : netUnits < 0
+                ? "text-red-600"
+                : "text-gray-900"
+            }`}
+          >
+            {formatUnits(netUnits)}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            Overall profit
+          </div>
+        </div>
 
-                <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                  {completedWagers.length} completed
-                </p>
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Streak
+          </div>
+          <div
+            className={`mt-2 text-2xl font-black ${streak.className}`}
+          >
+            {streak.label}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            {streak.detail}
+          </div>
+        </div>
+      </section>
+
+      {/* Filters */}
+      <section className="mb-6 rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">
+            Filter Bets
+          </h2>
+
+          {(resultFilter !== "all" ||
+            timeFilter !== "all" ||
+            betTypeFilter !== "all") && (
+            <button
+              onClick={() => {
+                setResultFilter("all");
+                setTimeFilter("all");
+                setBetTypeFilter("all");
+              }}
+              className="text-xs font-semibold text-green-600 hover:text-green-700"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {/* Result Filter */}
+        <div className="mb-4">
+          <div className="mb-2 text-xs font-semibold text-gray-400">
+            RESULT
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[
+              ["all", "All"],
+              ["pending", "Pending"],
+              ["wins", "Wins"],
+              ["losses", "Losses"],
+              ["pushes", "Pushes"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() =>
+                  setResultFilter(value as ResultFilter)
+                }
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  resultFilter === value
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Time Filter */}
+        <div className="mb-4">
+          <div className="mb-2 text-xs font-semibold text-gray-400">
+            TIME
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[
+              ["all", "All Time"],
+              ["week", "This Week"],
+              ["month", "This Month"],
+              ["season", "This Season"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() =>
+                  setTimeFilter(value as TimeFilter)
+                }
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  timeFilter === value
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Bet Type Filter */}
+        <div>
+          <div className="mb-2 text-xs font-semibold text-gray-400">
+            BET TYPE
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[
+              ["all", "All Types"],
+              ["spread", "Spread"],
+              ["moneyline", "Moneyline"],
+              ["total", "Total"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() =>
+                  setBetTypeFilter(value as BetTypeFilter)
+                }
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  betTypeFilter === value
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {loading ? (
+        <div className="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 shadow-sm">
+          Loading your bets...
+        </div>
+      ) : wagers.length === 0 ? (
+        <div className="rounded-2xl border bg-white p-10 text-center shadow-sm">
+          <div className="text-lg font-bold">
+            No bets yet
+          </div>
+          <p className="mt-1 text-sm text-gray-500">
+            Your wagers will appear here once you make one.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Pending Bets */}
+          {filteredPending.length > 0 && (
+            <section className="mb-8">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-black">
+                    Pending
+                  </h2>
+
+                  <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">
+                    {filteredPending.length}
+                  </span>
+                </div>
               </div>
 
-              {/* Win Rate */}
-              <div className="rounded-2xl bg-white p-3.5 shadow-sm sm:p-5">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
-                  Win Rate
-                </p>
+              <div className="space-y-3">
+                {filteredPending.map((wager) => (
+                  <div
+                    key={wager.id}
+                    className={`rounded-2xl border bg-white p-4 shadow-sm ${resultClass(
+                      wager.result
+                    )}`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-base font-black">
+                          {wager.pick}
+                        </div>
 
-                <p className="mt-1 text-xl font-extrabold text-gray-900 sm:text-2xl">
-                  {winRate}%
-                </p>
+                        <div className="mt-1 text-sm font-semibold text-gray-700">
+                          {gameName(wager)}
+                        </div>
 
-                <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                  {decidedWagers} decided
-                </p>
+                        <div className="mt-1 text-xs text-gray-400">
+                          {wager.game?.starts_at
+                            ? formatGameDate(
+                                wager.game.starts_at
+                              )
+                            : formatDate(wager.created_at)}
+                        </div>
+
+                        {wagerDetails(wager) && (
+                          <div className="mt-2 text-xs font-medium text-gray-500">
+                            {wagerDetails(wager)}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-black ${resultBadgeClass(
+                            wager.result
+                          )}`}
+                        >
+                          PENDING
+                        </span>
+
+                        <span className="text-xs font-semibold text-gray-400">
+                          Risk: 1.00u
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
+            </section>
+          )}
 
-              {/* Bets */}
-              <div className="rounded-2xl bg-white p-3.5 shadow-sm sm:p-5">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
-                  Bets
-                </p>
-
-                <p className="mt-1 text-xl font-extrabold text-gray-900 sm:text-2xl">
-                  {wagers.length}
-                </p>
-
-                <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                  {pendingWagers.length > 0
-                    ? `${pendingWagers.length} pending`
-                    : "No pending"}
-                </p>
-              </div>
-
-              {/* Net Units */}
-              <div className="rounded-2xl bg-white p-3.5 shadow-sm sm:p-5">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
-                  Net Units
-                </p>
-
-                <p
-                  className={`mt-1 text-xl font-extrabold sm:text-2xl ${
-                    netUnits > 0
-                      ? "text-green-600"
-                      : netUnits < 0
-                      ? "text-red-600"
-                      : "text-gray-900"
-                  }`}
-                >
-                  {netUnits > 0 ? "+" : ""}
-                  {netUnits.toFixed(2)}
-                </p>
-
-                <p className="mt-0.5 text-[10px] text-gray-400 sm:text-xs">
-                  Current profit
-                </p>
-              </div>
-            </div>
-
-            {/* Pending */}
-            <section className="mt-7 sm:mt-8">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">
-                  Pending
+          {/* Completed Bets */}
+          <section>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black">
+                  Completed
                 </h2>
 
-                {pendingWagers.length > 0 && (
-                  <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-bold text-yellow-800">
-                    {pendingWagers.length}
-                  </span>
-                )}
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-600">
+                  {filteredCompleted.length}
+                </span>
               </div>
 
-              {pendingWagers.length === 0 ? (
-                <div className="mt-3 rounded-2xl border border-dashed border-gray-300 bg-white p-5 text-center">
-                  <p className="text-sm text-gray-500">
-                    No pending bets.
-                  </p>
+              <select
+                value={sortOption}
+                onChange={(event) =>
+                  setSortOption(
+                    event.target.value as SortOption
+                  )
+                }
+                className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="biggest-win">
+                  Biggest Win
+                </option>
+                <option value="biggest-loss">
+                  Biggest Loss
+                </option>
+              </select>
+            </div>
+
+            {filteredCompleted.length === 0 ? (
+              <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
+                <div className="text-sm font-semibold text-gray-600">
+                  No bets match these filters.
                 </div>
-              ) : (
-                <div className="mt-3 space-y-2.5">
-                  {pendingWagers.map((wager) => (
+
+                <button
+                  onClick={() => {
+                    setResultFilter("all");
+                    setTimeFilter("all");
+                    setBetTypeFilter("all");
+                  }}
+                  className="mt-2 text-sm font-bold text-green-600 hover:text-green-700"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sortedCompletedWagers.map((wager) => {
+                  const normalizedResult =
+                    wager.result?.toLowerCase();
+
+                  const isWin = normalizedResult === "win";
+                  const isLoss =
+                    normalizedResult === "loss";
+                  const isPush =
+                    normalizedResult === "push";
+
+                  return (
                     <div
                       key={wager.id}
-                      className="overflow-hidden rounded-2xl bg-white shadow-sm"
+                      className={`rounded-2xl border bg-white p-4 shadow-sm ${resultClass(
+                        wager.result
+                      )}`}
                     >
-                      <div className="border-l-4 border-yellow-400 p-3.5 sm:p-5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-bold text-gray-900 sm:text-base">
-                              {gameName(wager)}
-                            </h3>
-
-                            {wager.game && (
-                              <p className="mt-1 text-[11px] text-gray-500 sm:text-xs">
-                                {formatDate(
-                                  wager.game.starts_at
-                                )}
-                              </p>
-                            )}
-
-                            <div className="mt-3">
-                              <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
-                                Your Pick
-                              </p>
-
-                              <p className="mt-0.5 truncate text-sm font-extrabold text-gray-900 sm:text-base">
-                                {wager.pick}
-                              </p>
-
-                              {wagerDetails(wager) && (
-                                <p className="mt-0.5 text-xs text-gray-500 sm:text-sm">
-                                  {wagerDetails(wager)}
-                                </p>
-                              )}
-                            </div>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-base font-black">
+                            {wager.pick}
                           </div>
 
-                          <div className="shrink-0 text-right">
-                            <span className="inline-flex rounded-full bg-yellow-100 px-2 py-1 text-[10px] font-bold uppercase text-yellow-800 sm:px-2.5 sm:text-xs">
-                              Pending
-                            </span>
+                          <div className="mt-1 text-sm font-semibold text-gray-700">
+                            {gameName(wager)}
+                          </div>
 
-                            <p className="mt-2 text-sm font-extrabold text-gray-700 sm:mt-3">
-                              1.00
-                            </p>
+                          <div className="mt-1 text-xs text-gray-400">
+                            {formatDate(wager.created_at)}
+                          </div>
 
-                            <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 sm:text-[11px]">
-                              Unit Risk
-                            </p>
+                          {wagerDetails(wager) && (
+                            <div className="mt-2 text-xs font-medium text-gray-500">
+                              {wagerDetails(wager)}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-black ${resultBadgeClass(
+                              wager.result
+                            )}`}
+                          >
+                            {resultLabel(wager.result)}
+                          </span>
+
+                          <div
+                            className={`text-lg font-black ${
+                              isWin
+                                ? "text-green-600"
+                                : isLoss
+                                ? "text-red-600"
+                                : isPush
+                                ? "text-gray-500"
+                                : "text-gray-900"
+                            }`}
+                          >
+                            {formatUnits(wager.units)}
                           </div>
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {/* Completed */}
-            <section className="mt-8 sm:mt-10">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    Completed
-                  </h2>
-
-                  {completedWagers.length > 0 && (
-                    <span className="ml-3 text-xs font-medium text-gray-400 sm:hidden">
-                      {completedWagers.length} bets
-                    </span>
-                  )}
-                </div>
-
-                {completedWagers.length > 0 && (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="hidden text-xs font-medium text-gray-400 sm:block">
-                      {completedWagers.length} bets
-                    </span>
-
-                    <label className="flex flex-1 items-center justify-end gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
-                        Sort
-                      </span>
-
-                      <select
-                        value={sortOption}
-                        onChange={(event) =>
-                          setSortOption(
-                            event.target.value as SortOption
-                          )
-                        }
-                        className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 outline-none transition focus:border-green-500 focus:ring-1 focus:ring-green-500 sm:px-3 sm:py-2"
-                      >
-                        <option value="newest">
-                          Newest
-                        </option>
-                        <option value="oldest">
-                          Oldest
-                        </option>
-                        <option value="biggest-win">
-                          Biggest Win
-                        </option>
-                        <option value="biggest-loss">
-                          Biggest Loss
-                        </option>
-                      </select>
-                    </label>
-                  </div>
-                )}
+                  );
+                })}
               </div>
+            )}
+          </section>
 
-              {completedWagers.length === 0 ? (
-                <div className="mt-3 rounded-2xl border border-dashed border-gray-300 bg-white p-5 text-center">
-                  <p className="text-sm text-gray-500">
-                    No completed bets yet.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-3 space-y-2 sm:space-y-2.5">
-                  {sortedCompletedWagers.map((wager) => {
-                    const result =
-                      wager.result?.toLowerCase();
-
-                    const won = result === "win";
-                    const pushed = result === "push";
-
-                    return (
-                      <div
-                        key={wager.id}
-                        className={`overflow-hidden rounded-2xl bg-white shadow-sm ${
-                          won
-                            ? "border-l-4 border-green-500"
-                            : pushed
-                            ? "border-l-4 border-gray-300"
-                            : "border-l-4 border-red-500"
-                        }`}
-                      >
-                        <div className="p-3.5 sm:p-5">
-                          <div className="flex items-center justify-between gap-3">
-
-                            {/* Bet information */}
-                            <div className="min-w-0 flex-1">
-                              <h3 className="truncate text-sm font-bold text-gray-900 sm:text-base">
-                                {gameName(wager)}
-                              </h3>
-
-                              <p className="mt-1 truncate text-xs text-gray-600 sm:text-sm">
-                                <span className="font-bold text-gray-900">
-                                  {wager.pick}
-                                </span>
-
-                                {wagerDetails(wager) && (
-                                  <span className="text-gray-400">
-                                    {" "}
-                                    · {wagerDetails(wager)}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-
-                            {/* Result */}
-                            <div className="shrink-0 text-right">
-                              <p
-                                className={`text-xl font-extrabold leading-none sm:text-2xl ${
-                                  won
-                                    ? "text-green-600"
-                                    : pushed
-                                    ? "text-gray-600"
-                                    : "text-red-600"
-                                }`}
-                              >
-                                {formatUnits(wager.units)}
-                              </p>
-
-                              <span
-                                className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide sm:px-2.5 sm:py-1 sm:text-[11px] ${
-                                  won
-                                    ? "bg-green-100 text-green-800"
-                                    : pushed
-                                    ? "bg-gray-100 text-gray-600"
-                                    : "bg-red-100 text-red-800"
-                                }`}
-                              >
-                                {wager.result}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Active sort indicator */}
-              {completedWagers.length > 1 && (
-                <p className="mt-2 text-right text-[10px] text-gray-400">
-                  Sorted by {sortLabel().toLowerCase()}
-                </p>
-              )}
-            </section>
-          </>
-        )}
-      </div>
+          {/* Active Sort Indicator */}
+          {filteredCompleted.length > 1 && (
+            <div className="mt-4 text-center text-xs text-gray-400">
+              Sorted by {sortLabel()}
+            </div>
+          )}
+        </>
+      )}
     </main>
   );
 }
