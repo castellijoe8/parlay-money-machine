@@ -9,6 +9,7 @@ type Game = {
   away_team: string;
   home_team: string;
   starts_at: string;
+  status: string;
   spread: number | null;
   spread_home: number | null;
   spread_odds_away: number | null;
@@ -33,7 +34,8 @@ export default function WagerPage() {
   const gameId = params.id as string;
 
   const [game, setGame] = useState<Game | null>(null);
-  const [selectedBet, setSelectedBet] = useState<BetOption | null>(null);
+  const [selectedBet, setSelectedBet] =
+    useState<BetOption | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -43,7 +45,7 @@ export default function WagerPage() {
       const { data, error } = await supabase
         .from("games")
         .select(
-          "id, away_team, home_team, starts_at, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
+          "id, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
         )
         .eq("id", gameId)
         .single();
@@ -89,7 +91,22 @@ export default function WagerPage() {
     return line > 0 ? `+${line}` : String(line);
   }
 
+  function isGameStarted() {
+    if (!game) {
+      return false;
+    }
+
+    return new Date(game.starts_at).getTime() <= Date.now();
+  }
+
   function selectBet(option: BetOption) {
+    if (isGameStarted()) {
+      setMessage(
+        "Wagering is closed. This game has already started."
+      );
+      return;
+    }
+
     setSelectedBet(option);
     setMessage("");
   }
@@ -101,6 +118,18 @@ export default function WagerPage() {
 
     setSaving(true);
     setMessage("");
+
+    // Final cutoff check immediately before saving.
+    // This protects against someone leaving this page open
+    // until after the game starts.
+    if (isGameStarted()) {
+      setMessage(
+        "Wagering is closed. This game has already started."
+      );
+      setSelectedBet(null);
+      setSaving(false);
+      return;
+    }
 
     const {
       data: { user },
@@ -117,6 +146,18 @@ export default function WagerPage() {
       .select("display_name")
       .eq("id", user.id)
       .maybeSingle();
+
+    // Check one more time immediately before the insert.
+    // This minimizes the possibility of a wager slipping through
+    // if kickoff occurs while the request is being processed.
+    if (isGameStarted()) {
+      setMessage(
+        "Wagering is closed. This game has already started."
+      );
+      setSelectedBet(null);
+      setSaving(false);
+      return;
+    }
 
     const { error } = await supabase.from("picks").insert({
       game_id: game.id,
@@ -167,6 +208,8 @@ export default function WagerPage() {
       </main>
     );
   }
+
+  const gameStarted = isGameStarted();
 
   const spreadOptions: BetOption[] = [
     {
@@ -228,8 +271,11 @@ export default function WagerPage() {
     return (
       <button
         onClick={() => selectBet(option)}
+        disabled={gameStarted}
         className={`w-full rounded-lg border px-4 py-3 text-left transition ${
-          selected
+          gameStarted
+            ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+            : selected
             ? "border-gray-900 bg-gray-900 text-white"
             : "border-gray-200 bg-white text-gray-900 hover:border-gray-400"
         }`}
@@ -260,13 +306,40 @@ export default function WagerPage() {
         </button>
 
         <div className="rounded-xl bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-900">
-            {game.away_team} vs. {game.home_team}
-          </h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {game.away_team} vs. {game.home_team}
+              </h1>
 
-          <p className="mt-1 text-sm text-gray-500">
-            {formatDate(game.starts_at)}
-          </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {formatDate(game.starts_at)}
+              </p>
+            </div>
+
+            {gameStarted ? (
+              <span className="inline-flex w-fit items-center rounded-full bg-red-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-700">
+                ● Wagering Closed
+              </span>
+            ) : (
+              <span className="inline-flex w-fit items-center rounded-full bg-green-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-green-700">
+                Wagering Open
+              </span>
+            )}
+          </div>
+
+          {gameStarted ? (
+            <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+              <p className="font-semibold text-red-800">
+                Wagering is closed
+              </p>
+
+              <p className="mt-1 text-sm text-red-700">
+                This game has already started. New wagers
+                cannot be placed.
+              </p>
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <h2 className="text-lg font-bold text-gray-900">
@@ -314,7 +387,7 @@ export default function WagerPage() {
           </div>
 
           <div className="mt-8 border-t border-gray-100 pt-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm text-gray-500">
                   Wager Amount
@@ -327,14 +400,22 @@ export default function WagerPage() {
 
               <button
                 onClick={placeWager}
-                disabled={!selectedBet || saving}
+                disabled={
+                  !selectedBet ||
+                  saving ||
+                  gameStarted
+                }
                 className="rounded-lg bg-gray-900 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {saving ? "Placing..." : "Confirm Wager"}
+                {gameStarted
+                  ? "Wagering Closed"
+                  : saving
+                  ? "Placing..."
+                  : "Confirm Wager"}
               </button>
             </div>
 
-            {selectedBet && (
+            {selectedBet && !gameStarted && (
               <div className="mt-4 rounded-lg bg-gray-100 p-4 text-sm text-gray-700">
                 <span className="font-semibold">
                   Your pick:
