@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Game = {
@@ -31,6 +31,8 @@ type UserPick = {
   result: string | null;
 };
 
+type ViewFilter = "all" | "live" | "upcoming";
+
 const SCROLL_KEY = "parlay-money-machine-home-scroll";
 
 export default function HomePage() {
@@ -38,6 +40,8 @@ export default function HomePage() {
   const [userPicks, setUserPicks] = useState<Record<string, UserPick>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [viewFilter, setViewFilter] =
+    useState<ViewFilter>("all");
 
   useEffect(() => {
     loadGames();
@@ -160,6 +164,15 @@ export default function HomePage() {
   function formatDate(date: string) {
     return new Date(date).toLocaleString([], {
       weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  function formatShortDate(date: string) {
+    return new Date(date).toLocaleString([], {
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -300,7 +313,23 @@ export default function HomePage() {
         new Date(b.starts_at).getTime()
     );
 
-  const groupedUpcoming = upcomingGames.reduce(
+  const filteredLiveGames = useMemo(() => {
+    if (viewFilter === "upcoming") {
+      return [];
+    }
+
+    return liveGames;
+  }, [liveGames, viewFilter]);
+
+  const filteredUpcomingGames = useMemo(() => {
+    if (viewFilter === "live") {
+      return [];
+    }
+
+    return upcomingGames;
+  }, [upcomingGames, viewFilter]);
+
+  const groupedUpcoming = filteredUpcomingGames.reduce(
     (groups, game) => {
       const key = getDayKey(game.starts_at);
 
@@ -315,6 +344,20 @@ export default function HomePage() {
     {} as Record<string, Game[]>
   );
 
+  const pendingPickCount = Object.values(userPicks).filter(
+    (pick) => {
+      const result = String(pick.result ?? "")
+        .trim()
+        .toLowerCase();
+
+      return !result || result === "pending";
+    }
+  ).length;
+
+  const gamesWithPicks = games.filter(
+    (game) => userPicks[game.id]
+  ).length;
+
   function renderGameCard(game: Game) {
     const live = isLive(game);
     const existingPick = userPicks[game.id];
@@ -326,206 +369,376 @@ export default function HomePage() {
       <div
         key={game.id}
         id={`game-${game.id}`}
-        className={`rounded-xl bg-white p-4 shadow-sm sm:p-5 ${
-          live ? "ring-1 ring-red-200" : ""
+        className={`overflow-hidden rounded-2xl bg-white shadow-sm ${
+          live
+            ? "border border-red-200 ring-1 ring-red-100"
+            : "border border-gray-100"
         }`}
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
+        {/* Game Header */}
+        <div className="p-3.5 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              {live ? (
+                <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-red-700 sm:text-xs">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                  Live Now
+                </div>
+              ) : (
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:text-xs">
+                  {formatShortDate(game.starts_at)}
+                </p>
+              )}
+
+              <h3 className="truncate text-base font-extrabold leading-tight text-gray-900 sm:text-xl">
+                {game.away_team}{" "}
+                <span className="font-normal text-gray-400">
+                  vs.
+                </span>{" "}
+                {game.home_team}
+              </h3>
+            </div>
+
             {live ? (
-              <div className="mb-1.5 inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-700">
-                ● Live
+              <div className="shrink-0 text-right">
+                <p className="text-xl font-extrabold leading-none text-gray-900 sm:text-2xl">
+                  {game.away_score ?? 0} —{" "}
+                  {game.home_score ?? 0}
+                </p>
+                <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-500">
+                  Live
+                </p>
               </div>
             ) : null}
-
-            <h3 className="text-lg font-bold leading-tight text-gray-900 sm:text-xl">
-              {game.away_team}{" "}
-              <span className="font-normal text-gray-400">
-                vs.
-              </span>{" "}
-              {game.home_team}
-            </h3>
-
-            {live ? (
-              <div className="mt-1 text-xl font-bold text-gray-900">
-                {game.away_score ?? 0} —{" "}
-                {game.home_score ?? 0}
-              </div>
-            ) : (
-              <p className="mt-1 text-xs text-gray-500 sm:text-sm">
-                {formatDate(game.starts_at)}
-              </p>
-            )}
           </div>
 
-          <button
-            onClick={() => {
-              saveScrollPosition();
-              window.location.href = `/wager/${game.id}`;
-            }}
-            className="w-full shrink-0 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 sm:w-auto"
-          >
-            {existingPick ? "View Wager" : "Place Wager"}
-          </button>
-        </div>
+          {/* Existing Pick */}
+          {existingPick ? (
+            <div
+              className={`mt-3 rounded-xl border px-3 py-2.5 ${pickStatus?.className}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[9px] font-extrabold uppercase tracking-wide sm:text-[10px]">
+                      Your Pick
+                    </p>
 
-        {existingPick ? (
-          <div
-            className={`mt-3 rounded-lg border px-3 py-2 ${pickStatus?.className}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wide">
-                    Your Pick
+                    <span className="text-[9px] font-bold opacity-50 sm:text-[10px]">
+                      ·
+                    </span>
+
+                    <span className="text-[9px] font-extrabold uppercase tracking-wide sm:text-[10px]">
+                      {pickStatus?.label}
+                    </span>
+                  </div>
+
+                  <p className="mt-0.5 truncate text-sm font-extrabold text-gray-900 sm:text-base">
+                    {formatUserPick(existingPick)}
                   </p>
+                </div>
 
-                  <span className="text-[10px] font-bold uppercase tracking-wide">
-                    ·
+                <button
+                  onClick={() => {
+                    saveScrollPosition();
+                    window.location.href = `/wager/${game.id}`;
+                  }}
+                  className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-white transition hover:bg-gray-700 sm:px-3.5 sm:text-xs"
+                >
+                  View Bet
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Betting Markets */}
+          <div className="mt-3 grid grid-cols-3 gap-1.5 sm:mt-4 sm:gap-2">
+            {/* Spread */}
+            <div className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">
+                Spread
+              </p>
+
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
+                    {game.away_team}
                   </span>
 
-                  <span className="text-[10px] font-bold uppercase tracking-wide">
-                    {pickStatus?.label}
+                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
+                    {formatLine(game.spread)}{" "}
+                    <span className="font-medium text-gray-500">
+                      {formatOdds(game.spread_odds_away)}
+                    </span>
                   </span>
                 </div>
 
-                <p className="mt-0.5 truncate text-sm font-bold text-gray-900">
-                  {formatUserPick(existingPick)}
-                </p>
-              </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
+                    {game.home_team}
+                  </span>
 
-              <span className="shrink-0 text-xs font-semibold">
-                1 Unit
-              </span>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-              Spread
-            </p>
-
-            <div className="mt-1.5 space-y-1 text-xs">
-              <div className="flex justify-between gap-2">
-                <span className="truncate">
-                  {game.away_team}
-                </span>
-
-                <span className="shrink-0 font-semibold">
-                  {formatLine(game.spread)}{" "}
-                  {formatOdds(game.spread_odds_away)}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-2">
-                <span className="truncate">
-                  {game.home_team}
-                </span>
-
-                <span className="shrink-0 font-semibold">
-                  {formatLine(game.spread_home)}{" "}
-                  {formatOdds(game.spread_odds_home)}
-                </span>
+                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
+                    {formatLine(game.spread_home)}{" "}
+                    <span className="font-medium text-gray-500">
+                      {formatOdds(game.spread_odds_home)}
+                    </span>
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-              Total
-            </p>
+            {/* Total */}
+            <div className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">
+                Total
+              </p>
 
-            <div className="mt-1.5 space-y-1 text-xs">
-              <div className="flex justify-between gap-2">
-                <span>Over</span>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-medium text-gray-600 sm:text-xs">
+                    Over
+                  </span>
 
-                <span className="font-semibold">
-                  {game.total ?? "—"}{" "}
-                  {formatOdds(game.total_odds_over)}
-                </span>
-              </div>
+                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
+                    {game.total ?? "—"}{" "}
+                    <span className="font-medium text-gray-500">
+                      {formatOdds(game.total_odds_over)}
+                    </span>
+                  </span>
+                </div>
 
-              <div className="flex justify-between gap-2">
-                <span>Under</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-medium text-gray-600 sm:text-xs">
+                    Under
+                  </span>
 
-                <span className="font-semibold">
-                  {game.total ?? "—"}{" "}
-                  {formatOdds(game.total_odds_under)}
-                </span>
+                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
+                    {game.total ?? "—"}{" "}
+                    <span className="font-medium text-gray-500">
+                      {formatOdds(game.total_odds_under)}
+                    </span>
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-              Moneyline
-            </p>
+            {/* Moneyline */}
+            <div className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">
+                Moneyline
+              </p>
 
-            <div className="mt-1.5 space-y-1 text-xs">
-              <div className="flex justify-between gap-2">
-                <span className="truncate">
-                  {game.away_team}
-                </span>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
+                    {game.away_team}
+                  </span>
 
-                <span className="shrink-0 font-semibold">
-                  {formatOdds(game.moneyline_away)}
-                </span>
-              </div>
+                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
+                    {formatOdds(game.moneyline_away)}
+                  </span>
+                </div>
 
-              <div className="flex justify-between gap-2">
-                <span className="truncate">
-                  {game.home_team}
-                </span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
+                    {game.home_team}
+                  </span>
 
-                <span className="shrink-0 font-semibold">
-                  {formatOdds(game.moneyline_home)}
-                </span>
+                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
+                    {formatOdds(game.moneyline_home)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Main CTA */}
+          {!existingPick ? (
+            <button
+              onClick={() => {
+                saveScrollPosition();
+                window.location.href = `/wager/${game.id}`;
+              }}
+              className="mt-3 w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-gray-700 active:scale-[0.99] sm:mt-4"
+            >
+              Bet This Game →
+            </button>
+          ) : (
+            <div className="mt-2 flex items-center justify-between px-1 text-[10px] font-semibold text-gray-400 sm:text-xs">
+              <span>1 Unit Risked</span>
+              <span>{formatDate(game.starts_at)}</span>
+            </div>
+          )}
         </div>
-
-        <p className="mt-2.5 text-[11px] font-semibold text-gray-500">
-          1 Unit Risked
-        </p>
       </div>
     );
   }
 
+  const filterButtonClass = (filter: ViewFilter) =>
+    `rounded-lg px-3 py-1.5 text-xs font-bold transition sm:px-4 sm:py-2 ${
+      viewFilter === filter
+        ? "bg-gray-900 text-white shadow-sm"
+        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+    }`;
+
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8">
+    <main className="min-h-screen bg-gray-50 px-3 py-4 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6">
-          <p className="text-gray-600">
-            Pick your side and make your 1-unit wager.
-          </p>
-        </div>
 
-        <section>
-          <div className="mb-5">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Upcoming Games
-            </h2>
+        {/* Hero */}
+        <section className="rounded-2xl bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-600 sm:text-xs">
+                Parlay Money Machine
+              </p>
 
-            <p className="mt-1 text-sm text-gray-500">
-              Choose a game to make your wager.
-            </p>
+              <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-900 sm:text-3xl">
+                Make your pick.
+              </h1>
+
+              <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+                1 unit. One game. No excuses.
+              </p>
+            </div>
+
+            <div className="hidden shrink-0 text-right sm:block">
+              <p className="text-2xl font-extrabold text-gray-900">
+                {games.length}
+              </p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                Games
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:grid-cols-3">
+            <button
+              onClick={() => {
+                window.location.href = "/wagers";
+              }}
+              className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-left transition hover:border-gray-300 hover:bg-gray-100"
+            >
+              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400">
+                My Bets
+              </p>
+
+              <p className="mt-0.5 text-sm font-extrabold text-gray-900">
+                {pendingPickCount > 0
+                  ? `${pendingPickCount} Pending`
+                  : "View Bets"}
+              </p>
+            </button>
+
+            <button
+              onClick={() => {
+                window.location.href = "/leaderboard";
+              }}
+              className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-left transition hover:border-gray-300 hover:bg-gray-100"
+            >
+              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400">
+                Competition
+              </p>
+
+              <p className="mt-0.5 text-sm font-extrabold text-gray-900">
+                Leaderboard →
+              </p>
+            </button>
+
+            <div className="col-span-2 rounded-xl border border-green-100 bg-green-50 px-3 py-3 sm:col-span-1">
+              <p className="text-[9px] font-extrabold uppercase tracking-wide text-green-600">
+                Your Action
+              </p>
+
+              <p className="mt-0.5 text-sm font-extrabold text-green-900">
+                {gamesWithPicks > 0
+                  ? `${gamesWithPicks} Pick${
+                      gamesWithPicks === 1 ? "" : "s"
+                    } Placed`
+                  : "Pick a Game"}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Games */}
+        <section className="mt-5 sm:mt-7">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-extrabold text-gray-900 sm:text-2xl">
+                Games
+              </h2>
+
+              <p className="mt-0.5 text-xs text-gray-500 sm:text-sm">
+                Choose a game and risk one unit.
+              </p>
+            </div>
+
+            <div className="text-right sm:hidden">
+              <p className="text-lg font-extrabold text-gray-900">
+                {games.length}
+              </p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                Available
+              </p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="mt-3 flex items-center justify-between rounded-xl border border-gray-200 bg-white p-1">
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => setViewFilter("all")}
+                className={filterButtonClass("all")}
+              >
+                All
+              </button>
+
+              <button
+                onClick={() => setViewFilter("live")}
+                className={filterButtonClass("live")}
+              >
+                Live
+                {liveGames.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] text-red-700">
+                    {liveGames.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setViewFilter("upcoming")}
+                className={filterButtonClass("upcoming")}
+              >
+                Upcoming
+              </button>
+            </div>
+
+            <span className="hidden pr-2 text-[10px] font-medium text-gray-400 sm:block">
+              {viewFilter === "live"
+                ? `${liveGames.length} live`
+                : viewFilter === "upcoming"
+                ? `${upcomingGames.length} upcoming`
+                : `${games.length} games`}
+            </span>
           </div>
 
           {loading ? (
-            <div className="rounded-xl bg-white p-6 shadow-sm">
-              <p className="text-gray-500">
-                Loading upcoming games...
+            <div className="mt-3 rounded-2xl bg-white p-6 shadow-sm">
+              <p className="text-sm text-gray-500">
+                Loading games...
               </p>
             </div>
           ) : message ? (
-            <div className="rounded-xl bg-white p-6 shadow-sm">
-              <p className="text-gray-500">{message}</p>
+            <div className="mt-3 rounded-2xl bg-white p-6 shadow-sm">
+              <p className="text-sm text-gray-500">
+                {message}
+              </p>
             </div>
           ) : games.length === 0 ? (
-            <div className="rounded-xl bg-white p-6 shadow-sm">
+            <div className="mt-3 rounded-2xl bg-white p-6 shadow-sm">
               <p className="font-semibold text-gray-900">
                 No upcoming games
               </p>
@@ -535,41 +748,67 @@ export default function HomePage() {
               </p>
             </div>
           ) : (
-            <div>
-              {liveGames.length > 0 ? (
-                <section className="mb-7">
-                  <div className="sticky top-0 z-10 -mx-1 mb-3 border-b border-red-100 bg-gray-50/95 px-1 py-2 backdrop-blur">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
-                      <h3 className="text-sm font-bold uppercase tracking-wide text-red-700">
-                        Live Now
-                      </h3>
-                    </div>
+            <div className="mt-4">
+
+              {/* Live */}
+              {filteredLiveGames.length > 0 ? (
+                <section className="mb-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-red-500" />
+
+                    <h3 className="text-xs font-extrabold uppercase tracking-wide text-red-700 sm:text-sm">
+                      Live Now
+                    </h3>
                   </div>
 
-                  <div className="space-y-3">
-                    {liveGames.map(renderGameCard)}
+                  <div className="space-y-2.5 sm:space-y-3">
+                    {filteredLiveGames.map(renderGameCard)}
                   </div>
                 </section>
               ) : null}
 
+              {/* Upcoming */}
               {Object.entries(groupedUpcoming).map(
                 ([dayKey, dayGames]) => (
-                  <section key={dayKey} className="mb-7">
-                    <div className="sticky top-0 z-10 -mx-1 mb-3 border-b border-gray-200 bg-gray-50/95 px-1 py-2 backdrop-blur">
-                      <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">
+                  <section
+                    key={dayKey}
+                    className="mb-6"
+                  >
+                    <div className="mb-2 flex items-center justify-between border-b border-gray-200 pb-2">
+                      <h3 className="text-xs font-extrabold uppercase tracking-wide text-gray-700 sm:text-sm">
                         {formatDayHeader(
                           dayGames[0].starts_at
                         )}
                       </h3>
+
+                      <span className="text-[10px] font-medium text-gray-400">
+                        {dayGames.length}{" "}
+                        {dayGames.length === 1
+                          ? "game"
+                          : "games"}
+                      </span>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5 sm:space-y-3">
                       {dayGames.map(renderGameCard)}
                     </div>
                   </section>
                 )
               )}
+
+              {/* Empty filtered state */}
+              {filteredLiveGames.length === 0 &&
+                filteredUpcomingGames.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
+                    <p className="font-semibold text-gray-900">
+                      No games in this view
+                    </p>
+
+                    <p className="mt-1 text-sm text-gray-500">
+                      Try another filter.
+                    </p>
+                  </div>
+                )}
             </div>
           )}
         </section>
