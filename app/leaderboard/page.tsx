@@ -323,13 +323,13 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-10">
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
+    <main className="mx-auto max-w-6xl px-2.5 py-5 sm:px-6 sm:py-10">
+      <div className="mb-5 sm:mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900">
           Leaderboard
         </h1>
 
-        <p className="mt-2 text-sm text-gray-600 sm:text-base">
+        <p className="mt-1.5 text-sm text-gray-600 sm:mt-2 sm:text-base">
           See who&apos;s winning the most wagers.
         </p>
       </div>
@@ -348,8 +348,30 @@ export default function LeaderboardPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <div className="grid grid-cols-[28px_minmax(0,1fr)_32px_32px_48px_72px_58px] items-center border-b border-gray-200 bg-gray-50 px-3 py-3 text-[11px] font-semibold text-gray-500 sm:grid-cols-[40px_minmax(0,1fr)_60px_60px_70px_90px_80px] sm:px-6 sm:py-4 sm:text-sm">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            {/* Header */}
+            <div
+              className="
+                grid
+                grid-cols-[24px_minmax(0,1fr)_28px_28px_43px_67px_55px]
+                items-center
+                border-b
+                border-gray-200
+                bg-gray-50
+                px-2.5
+                py-3
+                text-[10px]
+                font-bold
+                uppercase
+                tracking-wide
+                text-gray-500
+                sm:grid-cols-[40px_minmax(0,1fr)_60px_60px_70px_90px_80px]
+                sm:px-6
+                sm:py-4
+                sm:text-sm
+                sm:tracking-normal
+              "
+            >
               <div>#</div>
 
               <div>Player</div>
@@ -375,6 +397,7 @@ export default function LeaderboardPage() {
               </div>
             </div>
 
+            {/* Players */}
             {leaderboard.map((player, index) => {
               const winPercentage =
                 player.total > 0
@@ -386,74 +409,135 @@ export default function LeaderboardPage() {
               const isCurrentUser =
                 player.user_id === currentUserId;
 
+              const isFirst = index === 0;
+              const isSecond = index === 1;
+              const isThird = index === 2;
+
               return (
                 <div
                   key={player.user_id}
-                  className={`grid grid-cols-[28px_minmax(0,1fr)_32px_32px_48px_72px_58px] items-center border-b px-3 py-3 last:border-b-0 sm:grid-cols-[40px_minmax(0,1fr)_60px_60px_70px_90px_80px] sm:px-6 sm:py-4 ${
-                    isCurrentUser
-                      ? "border-green-200 border-l-4 bg-green-50"
-                      : "border-gray-100"
-                  }`}
-                >
-                  <div
-                    className={`font-bold ${
+                  className={`
+                    grid
+                    grid-cols-[24px_minmax(0,1fr)_28px_28px_43px_67px_55px]
+                    items-center
+                    border-b
+                    px-2.5
+                    py-3.5
+                    transition-colors
+                    last:border-b-0
+                    sm:grid-cols-[40px_minmax(0,1fr)_60px_60px_70px_90px_80px]
+                    sm:px-6
+                    sm:py-4
+                    ${
                       isCurrentUser
-                        ? "text-green-700"
-                        : "text-gray-400"
-                    }`}
+                        ? "border-green-200 border-l-4 bg-green-50 pl-1.5 sm:pl-5"
+                        : "border-gray-100"
+                    }
+                  `}
+                >
+                  {/* Rank */}
+                  <div
+                    className={`
+                      text-sm
+                      font-extrabold
+                      sm:text-base
+                      ${
+                        isCurrentUser
+                          ? "text-green-700"
+                          : isFirst
+                          ? "text-gray-900"
+                          : isSecond
+                          ? "text-gray-600"
+                          : isThird
+                          ? "text-gray-500"
+                          : "text-gray-400"
+                      }
+                    `}
                   >
                     {index + 1}
                   </div>
 
-                  <div className="min-w-0 font-semibold text-gray-900">
+                  {/* Player */}
+                  <div className="min-w-0 pr-1">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="block min-w-0 truncate">
+                      <span
+                        className={`
+                          block
+                          min-w-0
+                          truncate
+                          text-[13px]
+                          font-bold
+                          sm:text-base
+                          ${
+                            isCurrentUser
+                              ? "text-green-900"
+                              : "text-gray-900"
+                          }
+                        `}
+                      >
                         {player.user_name}
                       </span>
 
                       {isCurrentUser ? (
-                        <span className="shrink-0 rounded-full bg-green-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                        <span className="shrink-0 rounded-full bg-green-600 px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wide text-white sm:px-2 sm:text-[9px]">
                           You
                         </span>
                       ) : null}
                     </div>
                   </div>
 
-                  <div className="text-center text-sm font-semibold text-green-600 sm:text-base">
+                  {/* Wins */}
+                  <div className="text-center text-xs font-bold text-green-600 sm:text-base">
                     {player.wins}
                   </div>
 
-                  <div className="text-center text-sm font-semibold text-red-600 sm:text-base">
+                  {/* Losses */}
+                  <div className="text-center text-xs font-bold text-red-600 sm:text-base">
                     {player.losses}
                   </div>
 
-                  <div className="text-center text-sm font-semibold text-gray-900 sm:text-base">
+                  {/* Win Percentage */}
+                  <div className="text-center text-xs font-bold text-gray-900 sm:text-base">
                     {winPercentage}%
                   </div>
 
+                  {/* Units */}
                   <div
-                    className={`text-center text-sm font-bold sm:text-base ${
-                      player.net_units > 0
-                        ? "text-green-600"
-                        : player.net_units < 0
-                        ? "text-red-600"
-                        : "text-gray-900"
-                    }`}
+                    className={`
+                      text-center
+                      text-xs
+                      font-extrabold
+                      sm:text-base
+                      ${
+                        player.net_units > 0
+                          ? "text-green-600"
+                          : player.net_units < 0
+                          ? "text-red-600"
+                          : "text-gray-900"
+                      }
+                    `}
                   >
                     {player.net_units > 0 ? "+" : ""}
                     {player.net_units.toFixed(2)}
                   </div>
 
+                  {/* Streak */}
                   <div
-                    className={`text-center text-[11px] font-bold sm:text-sm ${
-                      player.streakType === "W" &&
-                      player.streak >= 3
-                        ? "text-orange-600"
-                        : player.streakType === "L" &&
-                          player.streak >= 3
-                        ? "text-blue-500"
-                        : "text-gray-600"
-                    }`}
+                    className={`
+                      text-center
+                      text-[10px]
+                      font-extrabold
+                      sm:text-sm
+                      ${
+                        player.streakType === "W" &&
+                        player.streak >= 3
+                          ? "text-orange-600"
+                          : player.streakType === "L" &&
+                            player.streak >= 3
+                          ? "text-blue-500"
+                          : "text-gray-600"
+                      }
+                    `}
                   >
                     {getStreakDisplay(player)}
                   </div>
@@ -462,12 +546,13 @@ export default function LeaderboardPage() {
             })}
           </div>
 
-          <div className="mt-8 border-t border-gray-200 pt-6 text-center">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+          {/* Oracle */}
+          <div className="mt-7 border-t border-gray-200 pt-5 text-center sm:mt-8 sm:pt-6">
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-gray-400 sm:text-[10px]">
               The Oracle Has Spoken
             </p>
 
-            <p className="mx-auto mt-2 max-w-2xl text-sm italic leading-6 text-gray-500">
+            <p className="mx-auto mt-2 max-w-2xl px-2 text-xs italic leading-5 text-gray-500 sm:text-sm sm:leading-6">
               &ldquo;{getOracle()}&rdquo;
             </p>
           </div>
