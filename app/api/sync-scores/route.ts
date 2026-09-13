@@ -63,14 +63,13 @@ export async function GET() {
     .eq("key", "scores");
 
   // Pull NCAAF scores from the last 3 days.
-  // This ensures recently completed games remain available
-  // for final-score updates and wager settlement.
-  const response = await fetch(
-    `https://api.the-odds-api.com/v4/sports/americanfootball_ncaaf/scores/?apiKey=${apiKey}&daysFrom=3`,
-    {
-      cache: "no-store",
-    }
-  );
+  const scoresUrl =
+    `https://api.the-odds-api.com/v4/sports/americanfootball_ncaaf/scores/` +
+    `?apiKey=${apiKey}&daysFrom=3`;
+
+  const response = await fetch(scoresUrl, {
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -96,35 +95,33 @@ export async function GET() {
 
     const homeScore =
       game.scores?.find(
-        (score: any) => score.name === game.home_team
+        (score: { name: string; score: string }) =>
+          score.name === game.home_team
       )?.score ?? null;
 
     const awayScore =
       game.scores?.find(
-        (score: any) => score.name === game.away_team
+        (score: { name: string; score: string }) =>
+          score.name === game.away_team
       )?.score ?? null;
 
-    const hasScores =
-      homeScore !== null && awayScore !== null;
+    const hasScores = homeScore !== null && awayScore !== null;
 
     if (!completed && hasScores) {
       liveGames++;
     }
 
-    // Determine the correct game status.
     const gameStatus = completed
       ? "final"
       : hasScores
-        ? "live"
-        : "scheduled";
+      ? "live"
+      : "scheduled";
 
     const { data: updatedGame, error } = await supabase
       .from("games")
       .update({
-        home_score:
-          homeScore !== null ? Number(homeScore) : null,
-        away_score:
-          awayScore !== null ? Number(awayScore) : null,
+        home_score: homeScore !== null ? Number(homeScore) : null,
+        away_score: awayScore !== null ? Number(awayScore) : null,
         status: gameStatus,
       })
       .eq("external_id", game.id)
@@ -136,7 +133,6 @@ export async function GET() {
       continue;
     }
 
-    // The Odds API can return games that aren't in our database yet.
     if (!updatedGame) {
       gamesNotInDatabase++;
       continue;
@@ -144,17 +140,17 @@ export async function GET() {
 
     updated++;
 
-    // Automatically settle all wagers once the game is final.
+    // Automatically settle wagers once the game is final.
     if (completed && updatedGame.status === "final") {
-      const { error: scoreError } = await supabase.rpc(
-        "score_game",
-        {
-          game_id_input: updatedGame.id,
-        }
-      );
+      const { error: scoreError } = await supabase.rpc("score_game", {
+        game_id_input: updatedGame.id,
+      });
 
       if (scoreError) {
-        console.error("Error scoring game:", scoreError);
+        console.error(
+          `Error scoring game ${updatedGame.id}:`,
+          scoreError
+        );
       } else {
         gamesScored++;
       }
