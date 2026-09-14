@@ -8,6 +8,7 @@ type Pick = {
   result: string | null;
   units: number | null;
   created_at: string;
+  game: { sport: "ncaaf" | "nfl" | null } | Array<{ sport: "ncaaf" | "nfl" | null }> | null;
 };
 
 type LeaderboardRow = {
@@ -31,10 +32,7 @@ export default function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadLeaderboard();
-  }, []);
+  const [sportFilter, setSportFilter] = useState<"all" | "nfl" | "ncaaf">("all");
 
   async function loadLeaderboard() {
     setLoading(true);
@@ -47,7 +45,7 @@ export default function LeaderboardPage() {
 
     const { data: picks, error: picksError } = await supabase
       .from("picks")
-      .select("user_id, result, units, created_at")
+      .select("user_id, result, units, created_at, game:games(sport)")
       .order("created_at", { ascending: true });
 
     if (picksError) {
@@ -95,6 +93,8 @@ export default function LeaderboardPage() {
 
     picks.forEach((pick: Pick) => {
       if (!pick.user_id) return;
+      const game = Array.isArray(pick.game) ? pick.game[0] : pick.game;
+      if (sportFilter !== "all" && game?.sport !== sportFilter) return;
 
       const result = String(pick.result ?? "")
         .trim()
@@ -190,22 +190,25 @@ export default function LeaderboardPage() {
         return b.net_units - a.net_units;
       }
 
-      if (b.wins !== a.wins) {
-        return b.wins - a.wins;
-      }
-
       const aPercentage =
         a.total > 0 ? a.wins / a.total : 0;
 
       const bPercentage =
         b.total > 0 ? b.wins / b.total : 0;
 
-      return bPercentage - aPercentage;
+      if (bPercentage !== aPercentage) return bPercentage - aPercentage;
+      return b.wins - a.wins;
     });
 
     setLeaderboard(rows);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void loadLeaderboard();
+    // The filter is the only input to this data load; the function is recreated per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sportFilter]);
 
   function getStreakDisplay(player: LeaderboardRow) {
     if (!player.streak || !player.streakType) {
@@ -485,8 +488,14 @@ export default function LeaderboardPage() {
         </h1>
 
         <p className="mt-1.5 text-sm text-gray-600 sm:mt-2 sm:text-base">
-          See who&apos;s winning the most wagers.
+          Net units settle the argument. Everyone else is just keeping score.
         </p>
+      </div>
+
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+        {[["all", "All"], ["nfl", "NFL"], ["ncaaf", "NCAAF"]].map(([value, label]) => (
+          <button key={value} onClick={() => setSportFilter(value as "all" | "nfl" | "ncaaf")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition ${sportFilter === value ? "bg-green-600 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100"}`}>{label}</button>
+        ))}
       </div>
 
       {loading ? (
@@ -508,7 +517,7 @@ export default function LeaderboardPage() {
             <div
               className="
                 grid
-                grid-cols-[24px_minmax(0,1fr)_28px_28px_43px_67px_55px]
+                grid-cols-[32px_minmax(0,1fr)_54px_58px]
                 items-center
                 border-b
                 border-gray-200
@@ -520,7 +529,7 @@ export default function LeaderboardPage() {
                 uppercase
                 tracking-wide
                 text-gray-500
-                sm:grid-cols-[40px_minmax(0,1fr)_60px_60px_70px_90px_80px]
+                sm:grid-cols-[48px_minmax(0,1fr)_120px_100px_80px_90px]
                 sm:px-6
                 sm:py-4
                 sm:text-sm
@@ -531,25 +540,7 @@ export default function LeaderboardPage() {
 
               <div>Player</div>
 
-              <div className="text-center">
-                W
-              </div>
-
-              <div className="text-center">
-                L
-              </div>
-
-              <div className="text-center">
-                %
-              </div>
-
-              <div className="text-center">
-                Units
-              </div>
-
-              <div className="text-center">
-                Streak
-              </div>
+              <div className="text-center">Record</div><div className="text-center">Units</div><div className="hidden text-center sm:block">Win %</div><div className="hidden text-center sm:block">Streak</div>
             </div>
 
             {/* Players */}
@@ -573,14 +564,14 @@ export default function LeaderboardPage() {
                   key={player.user_id}
                   className={`
                     grid
-                    grid-cols-[24px_minmax(0,1fr)_28px_28px_43px_67px_55px]
+                    grid-cols-[32px_minmax(0,1fr)_54px_58px]
                     items-center
                     border-b
                     px-2.5
                     py-3.5
                     transition-colors
                     last:border-b-0
-                    sm:grid-cols-[40px_minmax(0,1fr)_60px_60px_70px_90px_80px]
+                    sm:grid-cols-[48px_minmax(0,1fr)_120px_100px_80px_90px]
                     sm:px-6
                     sm:py-4
                     ${
@@ -609,7 +600,7 @@ export default function LeaderboardPage() {
                       }
                     `}
                   >
-                    {index + 1}
+                    {isFirst ? "🥇" : isSecond ? "🥈" : isThird ? "🥉" : index + 1}
                   </div>
 
                   {/* Player */}
@@ -641,20 +632,7 @@ export default function LeaderboardPage() {
                     </div>
                   </div>
 
-                  {/* Wins */}
-                  <div className="text-center text-xs font-bold text-green-600 sm:text-base">
-                    {player.wins}
-                  </div>
-
-                  {/* Losses */}
-                  <div className="text-center text-xs font-bold text-red-600 sm:text-base">
-                    {player.losses}
-                  </div>
-
-                  {/* Win Percentage */}
-                  <div className="text-center text-xs font-bold text-gray-900 sm:text-base">
-                    {winPercentage}%
-                  </div>
+                  <div className="text-center text-xs font-bold text-gray-700 sm:text-base">{player.wins}–{player.losses}–{player.pushes}</div>
 
                   {/* Units */}
                   <div
@@ -673,13 +651,14 @@ export default function LeaderboardPage() {
                     `}
                   >
                     {player.net_units > 0 ? "+" : ""}
-                    {player.net_units.toFixed(2)}
+                    {player.net_units.toFixed(2)}u
                   </div>
 
-                  {/* Streak */}
+                  <div className="hidden text-center text-xs font-bold text-gray-900 sm:block">{winPercentage}%</div>
+
                   <div
                     className={`
-                      text-center
+                      hidden text-center sm:block
                       text-[10px]
                       font-extrabold
                       sm:text-sm

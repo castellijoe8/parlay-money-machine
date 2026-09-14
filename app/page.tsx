@@ -35,6 +35,7 @@ type UserPick = {
 };
 
 type ViewFilter = "all" | "live" | "upcoming";
+type DateFilter = "all" | "today" | "tomorrow" | "weekend";
 type SportFilter = Sport;
 
 type NcaafConference =
@@ -51,6 +52,8 @@ type NcaafConference =
   | "Independents";
 
 type ConferenceFilter = "all" | NcaafConference;
+type NflDivisionFilter = "AFC" | "NFC" | "AFC East" | "AFC North" | "AFC South" | "AFC West" | "NFC East" | "NFC North" | "NFC South" | "NFC West";
+type LeagueFilter = ConferenceFilter | NflDivisionFilter;
 
 type BetOption = {
   game: Game;
@@ -91,6 +94,16 @@ const NCAAF_CONFERENCE_FILTERS: {
   { value: "MAC", label: "MAC" },
   { value: "Independents", label: "Independents" },
 ];
+
+const NFL_DIVISION_FILTERS: { value: LeagueFilter; label: string }[] = [
+  { value: "all", label: "All NFL" }, { value: "AFC", label: "AFC" }, { value: "NFC", label: "NFC" },
+  { value: "AFC East", label: "AFC East" }, { value: "AFC North", label: "AFC North" }, { value: "AFC South", label: "AFC South" }, { value: "AFC West", label: "AFC West" },
+  { value: "NFC East", label: "NFC East" }, { value: "NFC North", label: "NFC North" }, { value: "NFC South", label: "NFC South" }, { value: "NFC West", label: "NFC West" },
+];
+
+const NFL_TEAM_DIVISIONS: Record<string, NflDivisionFilter> = {
+  "Buffalo Bills": "AFC East", "Miami Dolphins": "AFC East", "New England Patriots": "AFC East", "New York Jets": "AFC East", "Baltimore Ravens": "AFC North", "Cincinnati Bengals": "AFC North", "Cleveland Browns": "AFC North", "Pittsburgh Steelers": "AFC North", "Houston Texans": "AFC South", "Indianapolis Colts": "AFC South", "Jacksonville Jaguars": "AFC South", "Tennessee Titans": "AFC South", "Denver Broncos": "AFC West", "Kansas City Chiefs": "AFC West", "Las Vegas Raiders": "AFC West", "Los Angeles Chargers": "AFC West", "Dallas Cowboys": "NFC East", "New York Giants": "NFC East", "Philadelphia Eagles": "NFC East", "Washington Commanders": "NFC East", "Chicago Bears": "NFC North", "Detroit Lions": "NFC North", "Green Bay Packers": "NFC North", "Minnesota Vikings": "NFC North", "Atlanta Falcons": "NFC South", "Carolina Panthers": "NFC South", "New Orleans Saints": "NFC South", "Tampa Bay Buccaneers": "NFC South", "Arizona Cardinals": "NFC West", "Los Angeles Rams": "NFC West", "San Francisco 49ers": "NFC West", "Seattle Seahawks": "NFC West",
+};
 
 /*
  * Team -> conference mapping.
@@ -446,7 +459,7 @@ function getGameSport(game: Game): Sport {
 
 function gameMatchesConference(
   game: Game,
-  conference: ConferenceFilter
+  conference: LeagueFilter
 ) {
   if (conference === "all") {
     return true;
@@ -458,8 +471,9 @@ function gameMatchesConference(
    * This means an eventual NFL game can never accidentally appear
    * when someone selects SEC, Big Ten, etc.
    */
-  if (getGameSport(game) !== "ncaaf") {
-    return false;
+  if (getGameSport(game) === "nfl") {
+    const division = NFL_TEAM_DIVISIONS[game.away_team] ?? NFL_TEAM_DIVISIONS[game.home_team];
+    return conference === division || (conference === "AFC" && division?.startsWith("AFC")) || (conference === "NFC" && division?.startsWith("NFC"));
   }
 
   const awayConference =
@@ -486,7 +500,9 @@ export default function HomePage() {
     useState<ViewFilter>("all");
 
   const [conferenceFilter, setConferenceFilter] =
-    useState<ConferenceFilter>("all");
+    useState<LeagueFilter>("all");
+
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
 
   const [sportFilter, setSportFilter] =
     useState<SportFilter>("ncaaf");
@@ -1049,6 +1065,25 @@ export default function HomePage() {
       conferenceFilter,
     ]);
 
+  const dateFilteredUpcomingGames = useMemo(() => {
+    if (dateFilter === "all") return conferenceFilteredUpcomingGames;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    let start = today;
+    let end: Date;
+    if (dateFilter === "today") end = tomorrow;
+    else if (dateFilter === "tomorrow") { start = tomorrow; end = new Date(tomorrow); end.setDate(end.getDate() + 1); }
+    else {
+      const daysUntilSaturday = today.getDay() === 0 ? -1 : (6 - today.getDay() + 7) % 7;
+      start = new Date(today);
+      start.setDate(today.getDate() + daysUntilSaturday);
+      end = new Date(start);
+      end.setDate(start.getDate() + 2);
+    }
+    return conferenceFilteredUpcomingGames.filter((game) => { const kickoff = new Date(game.starts_at); return kickoff >= start && kickoff < end; });
+  }, [conferenceFilteredUpcomingGames, dateFilter]);
+
   const filteredLiveGames =
     useMemo(() => {
       if (
@@ -1072,9 +1107,9 @@ export default function HomePage() {
         return [];
       }
 
-      return conferenceFilteredUpcomingGames;
+      return dateFilteredUpcomingGames;
     }, [
-      conferenceFilteredUpcomingGames,
+      dateFilteredUpcomingGames,
       viewFilter,
     ]);
 
@@ -1607,7 +1642,7 @@ export default function HomePage() {
     }`;
 
   const conferenceButtonClass = (
-    filter: ConferenceFilter
+    filter: LeagueFilter
   ) =>
     `shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
       conferenceFilter === filter
@@ -1811,13 +1846,22 @@ export default function HomePage() {
                 (sport) => (
                   <button
                     key={sport}
-                    onClick={() => setSportFilter(sport)}
+                    onClick={() => { setSportFilter(sport); setConferenceFilter("all"); }}
                     className={sportButtonClass(sport)}
                   >
                     {sport === "ncaaf" ? "NCAAF" : "NFL"}
                   </button>
                 )
               )}
+            </div>
+          </div>
+
+          {/* Date navigation */}
+          <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="flex gap-1.5 overflow-x-auto p-1.5 scrollbar-hide">
+              {([ ["all", "All Upcoming"], ["today", "Today"], ["tomorrow", "Tomorrow"], ["weekend", "This Weekend"] ] as [DateFilter, string][]).map(([filter, label]) => (
+                <button key={filter} onClick={() => setDateFilter(filter)} className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition ${dateFilter === filter ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}>{label}</button>
+              ))}
             </div>
           </div>
 
@@ -1844,7 +1888,15 @@ export default function HomePage() {
               )}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <div className="flex gap-1.5 overflow-x-auto p-1.5 scrollbar-hide">
+                {NFL_DIVISION_FILTERS.map((filter) => (
+                  <button key={filter.value} onClick={() => setConferenceFilter(filter.value)} className={conferenceButtonClass(filter.value)}>{filter.label}</button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="mt-3 rounded-2xl bg-white p-6 shadow-sm">
@@ -1939,7 +1991,7 @@ export default function HomePage() {
                   0 && (
                   <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
                     <p className="font-semibold text-gray-900">
-                      No games in this view
+                      No games found for this filter.
                     </p>
 
                     <p className="mt-1 text-sm text-gray-500">

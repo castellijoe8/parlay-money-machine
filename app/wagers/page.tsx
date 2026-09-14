@@ -17,6 +17,7 @@ type Wager = {
     away_team: string | null;
     home_team: string | null;
     starts_at: string | null;
+    sport: "ncaaf" | "nfl" | null;
   } | null;
 };
 
@@ -24,6 +25,7 @@ type ResultFilter = "all" | "pending" | "wins" | "losses" | "pushes";
 type TimeFilter = "all" | "week" | "month" | "season";
 type BetTypeFilter = "all" | "spread" | "moneyline" | "total";
 type SortOption = "newest" | "oldest" | "biggest-win" | "biggest-loss";
+type SportFilter = "all" | "ncaaf" | "nfl";
 
 export default function WagersPage() {
   const [wagers, setWagers] = useState<Wager[]>([]);
@@ -35,6 +37,7 @@ export default function WagersPage() {
   const [betTypeFilter, setBetTypeFilter] =
     useState<BetTypeFilter>("all");
   const [sortOption, setSortOption] = useState<SortOption>("newest");
+  const [sportFilter, setSportFilter] = useState<SportFilter>("all");
 
   useEffect(() => {
     loadWagers();
@@ -71,7 +74,8 @@ export default function WagersPage() {
         game:games (
           away_team,
           home_team,
-          starts_at
+          starts_at,
+          sport
         )
       `
       )
@@ -286,14 +290,19 @@ export default function WagersPage() {
     return true;
   }
 
+  function matchesSportFilter(wager: Wager) {
+    return sportFilter === "all" || wager.game?.sport === sportFilter;
+  }
+
   const filteredWagers = useMemo(() => {
     return wagers.filter(
       (wager) =>
         matchesTimeFilter(wager) &&
         matchesBetTypeFilter(wager) &&
-        matchesResultFilter(wager)
+        matchesResultFilter(wager) &&
+        matchesSportFilter(wager)
     );
-  }, [wagers, timeFilter, betTypeFilter, resultFilter]);
+  }, [wagers, timeFilter, betTypeFilter, resultFilter, sportFilter]);
 
   const filteredPending = useMemo(
     () =>
@@ -556,13 +565,13 @@ export default function WagersPage() {
 
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-            Bets
+            Pending
           </div>
           <div className="mt-2 text-2xl font-black">
-            {wagers.length}
+            {pending.length}
           </div>
           <div className="mt-1 text-xs text-gray-400">
-            Total wagers
+            Awaiting kickoff
           </div>
         </div>
 
@@ -610,18 +619,29 @@ export default function WagersPage() {
 
           {(resultFilter !== "all" ||
             timeFilter !== "all" ||
-            betTypeFilter !== "all") && (
+            betTypeFilter !== "all" ||
+            sportFilter !== "all") && (
             <button
               onClick={() => {
                 setResultFilter("all");
                 setTimeFilter("all");
                 setBetTypeFilter("all");
+                setSportFilter("all");
               }}
               className="text-xs font-semibold text-green-600 hover:text-green-700"
             >
               Clear filters
             </button>
           )}
+        </div>
+
+        <div className="mb-4">
+          <div className="mb-2 text-xs font-semibold text-gray-400">SPORT</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[["all", "All"], ["nfl", "NFL"], ["ncaaf", "NCAAF"]].map(([value, label]) => (
+              <button key={value} onClick={() => setSportFilter(value as SportFilter)} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${sportFilter === value ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{label}</button>
+            ))}
+          </div>
         </div>
 
         {/* Result Filter */}
@@ -726,8 +746,9 @@ export default function WagersPage() {
             No bets yet
           </div>
           <p className="mt-1 text-sm text-gray-500">
-            Your wagers will appear here once you make one.
+            Your wagers will appear here once you make one. Make your first pick on the game board.
           </p>
+          <a href="/" className="mt-4 inline-block rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700">Browse games</a>
         </div>
       ) : (
         <>
@@ -763,6 +784,8 @@ export default function WagersPage() {
                         <div className="mt-1 text-sm font-semibold text-gray-700">
                           {gameName(wager)}
                         </div>
+
+                        {wager.game?.sport && <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">{wager.game.sport}</span>}
 
                         <div className="mt-1 text-xs text-gray-400">
                           {wager.game?.starts_at
@@ -877,6 +900,8 @@ export default function WagersPage() {
                           <div className="mt-1 text-sm font-semibold text-gray-700">
                             {gameName(wager)}
                           </div>
+
+                          {wager.game?.sport && <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">{wager.game.sport}</span>}
 
                           <div className="mt-1 text-xs text-gray-400">
                             {formatDate(wager.created_at)}
