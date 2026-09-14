@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function Header() {
+  const router = useRouter();
+
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
@@ -53,16 +56,14 @@ export default function Header() {
 
   async function signOut() {
     await supabase.auth.signOut();
-    window.location.href = "/";
+    router.push("/");
   }
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
       <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 sm:py-4">
-
         {/* Top row on mobile / single row on desktop */}
         <div className="flex items-center justify-between">
-
           <Link
             href="/"
             className="brand-font text-2xl font-bold tracking-wide text-green-900 sm:text-3xl"
@@ -128,7 +129,6 @@ export default function Header() {
             Leaderboard
           </Link>
         </nav>
-
       </div>
     </header>
   );

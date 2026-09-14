@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Wager = {
@@ -38,10 +39,6 @@ export default function WagersPage() {
     useState<BetTypeFilter>("all");
   const [sortOption, setSortOption] = useState<SortOption>("newest");
   const [sportFilter, setSportFilter] = useState<SportFilter>("all");
-
-  useEffect(() => {
-    loadWagers();
-  }, []);
 
   async function loadWagers() {
     setLoading(true);
@@ -92,6 +89,13 @@ export default function WagersPage() {
     setWagers((data as unknown as Wager[]) || []);
     setLoading(false);
   }
+
+  useEffect(() => {
+    // This effect intentionally loads the user's wagers from Supabase on mount.
+    // The async operation updates local state as the external data arrives.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadWagers();
+  }, []);
 
   const pending = useMemo(
     () =>
@@ -218,7 +222,7 @@ export default function WagersPage() {
     return new Date(now.getFullYear(), 0, 1);
   }
 
-  function matchesTimeFilter(wager: Wager) {
+  const matchesTimeFilter = useCallback((wager: Wager) => {
     if (timeFilter === "all") return true;
 
     const wagerDate = new Date(wager.created_at);
@@ -236,7 +240,7 @@ export default function WagersPage() {
     }
 
     return true;
-  }
+  }, [timeFilter]);
 
   function normalizeBetType(type: string | null) {
     if (!type) return "";
@@ -268,32 +272,37 @@ export default function WagersPage() {
     return normalized;
   }
 
-  function matchesBetTypeFilter(wager: Wager) {
+  const matchesBetTypeFilter = useCallback((wager: Wager) => {
     if (betTypeFilter === "all") return true;
 
     return normalizeBetType(wager.bet_type) === betTypeFilter;
-  }
+  }, [betTypeFilter]);
 
-  function matchesResultFilter(wager: Wager) {
-    const result = wager.result?.toLowerCase();
+  const matchesResultFilter = useCallback(
+    (wager: Wager) => {
+      const result = wager.result?.toLowerCase();
 
-    if (resultFilter === "all") return true;
+      if (resultFilter === "all") return true;
 
-    if (resultFilter === "pending") {
-      return !result || result === "pending";
-    }
+      if (resultFilter === "pending") {
+        return !result || result === "pending";
+      }
 
-    if (resultFilter === "wins") return result === "win";
-    if (resultFilter === "losses") return result === "loss";
-    if (resultFilter === "pushes") return result === "push";
+      if (resultFilter === "wins") return result === "win";
+      if (resultFilter === "losses") return result === "loss";
+      if (resultFilter === "pushes") return result === "push";
 
-    return true;
-  }
+      return true;
+    },
+    [resultFilter]
+  );
 
-  function matchesSportFilter(wager: Wager) {
-    return sportFilter === "all" || wager.game?.sport === sportFilter;
-  }
-
+  const matchesSportFilter = useCallback(
+    (wager: Wager) => {
+      return sportFilter === "all" || wager.game?.sport === sportFilter;
+    },
+    [sportFilter]
+  );
   const filteredWagers = useMemo(() => {
     return wagers.filter(
       (wager) =>
@@ -302,7 +311,13 @@ export default function WagersPage() {
         matchesResultFilter(wager) &&
         matchesSportFilter(wager)
     );
-  }, [wagers, timeFilter, betTypeFilter, resultFilter, sportFilter]);
+  }, [
+    wagers,
+    matchesTimeFilter,
+    matchesBetTypeFilter,
+    matchesResultFilter,
+    matchesSportFilter,
+  ]);
 
   const filteredPending = useMemo(
     () =>
@@ -636,10 +651,28 @@ export default function WagersPage() {
         </div>
 
         <div className="mb-4">
-          <div className="mb-2 text-xs font-semibold text-gray-400">SPORT</div>
+          <div className="mb-2 text-xs font-semibold text-gray-400">
+            SPORT
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {[["all", "All"], ["nfl", "NFL"], ["ncaaf", "NCAAF"]].map(([value, label]) => (
-              <button key={value} onClick={() => setSportFilter(value as SportFilter)} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${sportFilter === value ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{label}</button>
+            {[
+              ["all", "All"],
+              ["nfl", "NFL"],
+              ["ncaaf", "NCAAF"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() =>
+                  setSportFilter(value as SportFilter)
+                }
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  sportFilter === value
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {label}
+              </button>
             ))}
           </div>
         </div>
@@ -748,7 +781,12 @@ export default function WagersPage() {
           <p className="mt-1 text-sm text-gray-500">
             Your wagers will appear here once you make one. Make your first pick on the game board.
           </p>
-          <a href="/" className="mt-4 inline-block rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700">Browse games</a>
+          <Link
+            href="/"
+            className="mt-4 inline-block rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700"
+          >
+            Browse games
+          </Link>
         </div>
       ) : (
         <>
@@ -785,7 +823,11 @@ export default function WagersPage() {
                           {gameName(wager)}
                         </div>
 
-                        {wager.game?.sport && <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">{wager.game.sport}</span>}
+                        {wager.game?.sport && (
+                          <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">
+                            {wager.game.sport}
+                          </span>
+                        )}
 
                         <div className="mt-1 text-xs text-gray-400">
                           {wager.game?.starts_at
@@ -879,10 +921,8 @@ export default function WagersPage() {
                     wager.result?.toLowerCase();
 
                   const isWin = normalizedResult === "win";
-                  const isLoss =
-                    normalizedResult === "loss";
-                  const isPush =
-                    normalizedResult === "push";
+                  const isLoss = normalizedResult === "loss";
+                  const isPush = normalizedResult === "push";
 
                   return (
                     <div
@@ -901,7 +941,11 @@ export default function WagersPage() {
                             {gameName(wager)}
                           </div>
 
-                          {wager.game?.sport && <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">{wager.game.sport}</span>}
+                          {wager.game?.sport && (
+                            <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">
+                              {wager.game.sport}
+                            </span>
+                          )}
 
                           <div className="mt-1 text-xs text-gray-400">
                             {formatDate(wager.created_at)}

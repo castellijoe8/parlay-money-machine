@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+
 import { supabase } from "@/lib/supabase";
 
 type Game = {
@@ -31,14 +32,22 @@ type BetOption = {
 
 export default function WagerPage() {
   const params = useParams();
+  const router = useRouter();
   const gameId = params.id as string;
 
   const [game, setGame] = useState<Game | null>(null);
-  const [selectedBet, setSelectedBet] =
-    useState<BetOption | null>(null);
+  const [selectedBet, setSelectedBet] = useState<BetOption | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    // The current timestamp is read once on the client so render logic
+    // remains deterministic and does not call Date.now() during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCurrentTime(Date.now());
+  }, []);
 
   useEffect(() => {
     async function loadGame() {
@@ -61,7 +70,7 @@ export default function WagerPage() {
     }
 
     if (gameId) {
-      loadGame();
+      void loadGame();
     }
   }, [gameId]);
 
@@ -92,17 +101,15 @@ export default function WagerPage() {
   }
 
   function isGameStarted() {
-    if (!game) {
+    if (!game || currentTime === null) {
       return false;
     }
 
-    return new Date(game.starts_at).getTime() <= Date.now();
+    return new Date(game.starts_at).getTime() <= currentTime;
   }
 
   function showWageringClosed() {
-    setMessage(
-      "Wagering is closed. This game has already started."
-    );
+    setMessage("Wagering is closed. This game has already started.");
     setSelectedBet(null);
     setSaving(false);
   }
@@ -126,7 +133,7 @@ export default function WagerPage() {
     setMessage("");
 
     // Final client-side cutoff check immediately before saving.
-    if (isGameStarted()) {
+    if (new Date(game.starts_at).getTime() <= Date.now()) {
       showWageringClosed();
       return;
     }
@@ -148,7 +155,7 @@ export default function WagerPage() {
       .maybeSingle();
 
     // One more client-side check immediately before the insert.
-    if (isGameStarted()) {
+    if (new Date(game.starts_at).getTime() <= Date.now()) {
       showWageringClosed();
       return;
     }
@@ -172,9 +179,7 @@ export default function WagerPage() {
       // If kickoff happened while the request was processing,
       // show the same friendly message as the frontend cutoff.
       if (
-        error.message
-          ?.toLowerCase()
-          .includes("wagering is closed")
+        error.message?.toLowerCase().includes("wagering is closed")
       ) {
         showWageringClosed();
         return;
@@ -185,17 +190,15 @@ export default function WagerPage() {
       return;
     }
 
-    window.location.href = "/wagers";
+    router.push("/wagers");
   }
 
-  if (loading) {
+  if (loading || currentTime === null) {
     return (
       <main className="min-h-screen bg-gray-50 px-6 py-8">
         <div className="mx-auto max-w-3xl">
           <div className="rounded-xl bg-white p-6 shadow-sm">
-            <p className="text-gray-500">
-              Loading game...
-            </p>
+            <p className="text-gray-500">Loading game...</p>
           </div>
         </div>
       </main>
@@ -283,14 +286,12 @@ export default function WagerPage() {
           gameStarted
             ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
             : selected
-            ? "border-gray-900 bg-gray-900 text-white"
-            : "border-gray-200 bg-white text-gray-900 hover:border-gray-400"
+              ? "border-gray-900 bg-gray-900 text-white"
+              : "border-gray-200 bg-white text-gray-900 hover:border-gray-400"
         }`}
       >
         <div className="flex items-center justify-between">
-          <span className="font-semibold">
-            {option.label}
-          </span>
+          <span className="font-semibold">{option.label}</span>
 
           {option.odds !== null && (
             <span className="font-semibold">
@@ -306,7 +307,7 @@ export default function WagerPage() {
     <main className="min-h-screen bg-gray-50 px-6 py-8">
       <div className="mx-auto max-w-3xl">
         <button
-          onClick={() => window.history.back()}
+          onClick={() => router.back()}
           className="mb-6 text-sm font-semibold text-gray-500 hover:text-gray-900"
         >
           ← Back
@@ -342,16 +343,14 @@ export default function WagerPage() {
               </p>
 
               <p className="mt-1 text-sm text-red-700">
-                This game has already started. New wagers
-                cannot be placed.
+                This game has already started. New wagers cannot be
+                placed.
               </p>
             </div>
           ) : null}
 
           <div className="mt-8">
-            <h2 className="text-lg font-bold text-gray-900">
-              Spread
-            </h2>
+            <h2 className="text-lg font-bold text-gray-900">Spread</h2>
 
             <div className="mt-3 space-y-2">
               {spreadOptions.map((option) => (
@@ -364,9 +363,7 @@ export default function WagerPage() {
           </div>
 
           <div className="mt-8">
-            <h2 className="text-lg font-bold text-gray-900">
-              Total
-            </h2>
+            <h2 className="text-lg font-bold text-gray-900">Total</h2>
 
             <div className="mt-3 space-y-2">
               {totalOptions.map((option) => (
@@ -396,9 +393,7 @@ export default function WagerPage() {
           <div className="mt-8 border-t border-gray-100 pt-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-gray-500">
-                  Wager Amount
-                </p>
+                <p className="text-sm text-gray-500">Wager Amount</p>
 
                 <p className="text-xl font-bold text-gray-900">
                   1 Unit
@@ -407,26 +402,20 @@ export default function WagerPage() {
 
               <button
                 onClick={placeWager}
-                disabled={
-                  !selectedBet ||
-                  saving ||
-                  gameStarted
-                }
+                disabled={!selectedBet || saving || gameStarted}
                 className="rounded-lg bg-gray-900 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {gameStarted
                   ? "Wagering Closed"
                   : saving
-                  ? "Placing..."
-                  : "Confirm Wager"}
+                    ? "Placing..."
+                    : "Confirm Wager"}
               </button>
             </div>
 
             {selectedBet && !gameStarted && (
               <div className="mt-4 rounded-lg bg-gray-100 p-4 text-sm text-gray-700">
-                <span className="font-semibold">
-                  Your pick:
-                </span>{" "}
+                <span className="font-semibold">Your pick:</span>{" "}
                 {selectedBet.pick} • {selectedBet.betType}
                 {selectedBet.line !== null &&
                   ` • ${formatLine(selectedBet.line)}`}
@@ -438,7 +427,9 @@ export default function WagerPage() {
             {message && (
               <div
                 className={`mt-4 rounded-lg p-4 text-sm ${
-                  message.toLowerCase().includes("wagering is closed")
+                  message
+                    .toLowerCase()
+                    .includes("wagering is closed")
                     ? "border border-red-200 bg-red-50 text-red-700"
                     : "bg-gray-100 text-gray-700"
                 }`}

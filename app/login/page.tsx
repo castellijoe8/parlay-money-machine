@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -37,7 +40,7 @@ export default function LoginPage() {
       return;
     }
 
-    window.location.href = "/";
+    router.push("/");
   }
 
   return (
@@ -46,7 +49,7 @@ export default function LoginPage() {
         <h1 className="text-4xl font-bold">Parlay Money Machine</h1>
 
         <p className="mt-2 text-slate-400">
-          Sign in if you're retarded.
+          Sign in if you&apos;re retarded.
         </p>
 
         <div className="mt-8 space-y-4">

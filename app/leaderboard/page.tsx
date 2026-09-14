@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import { supabase } from "@/lib/supabase";
 
 type Pick = {
@@ -8,7 +9,10 @@ type Pick = {
   result: string | null;
   units: number | null;
   created_at: string;
-  game: { sport: "ncaaf" | "nfl" | null } | Array<{ sport: "ncaaf" | "nfl" | null }> | null;
+  game:
+    | { sport: "ncaaf" | "nfl" | null }
+    | Array<{ sport: "ncaaf" | "nfl" | null }>
+    | null;
 };
 
 type LeaderboardRow = {
@@ -32,7 +36,9 @@ export default function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [sportFilter, setSportFilter] = useState<"all" | "nfl" | "ncaaf">("all");
+  const [sportFilter, setSportFilter] = useState<"all" | "nfl" | "ncaaf">(
+    "all"
+  );
 
   async function loadLeaderboard() {
     setLoading(true);
@@ -61,11 +67,7 @@ export default function LeaderboardPage() {
     }
 
     const userIds = [
-      ...new Set(
-        picks
-          .map((pick) => pick.user_id)
-          .filter(Boolean)
-      ),
+      ...new Set(picks.map((pick) => pick.user_id).filter(Boolean)),
     ];
 
     const { data: profiles, error: profilesError } = await supabase
@@ -80,10 +82,7 @@ export default function LeaderboardPage() {
     const profileMap = new Map<string, string>();
 
     (profiles ?? []).forEach((profile: Profile) => {
-      profileMap.set(
-        profile.id,
-        profile.display_name || "Player"
-      );
+      profileMap.set(profile.id, profile.display_name || "Player");
     });
 
     const stats: Record<
@@ -93,26 +92,23 @@ export default function LeaderboardPage() {
 
     picks.forEach((pick: Pick) => {
       if (!pick.user_id) return;
+
       const game = Array.isArray(pick.game) ? pick.game[0] : pick.game;
+
       if (sportFilter !== "all" && game?.sport !== sportFilter) return;
 
       const result = String(pick.result ?? "")
         .trim()
         .toLowerCase();
 
-      if (
-        result !== "win" &&
-        result !== "loss" &&
-        result !== "push"
-      ) {
+      if (result !== "win" && result !== "loss" && result !== "push") {
         return;
       }
 
       if (!stats[pick.user_id]) {
         stats[pick.user_id] = {
           user_id: pick.user_id,
-          user_name:
-            profileMap.get(pick.user_id) || "Player",
+          user_name: profileMap.get(pick.user_id) || "Player",
           wins: 0,
           losses: 0,
           pushes: 0,
@@ -137,11 +133,7 @@ export default function LeaderboardPage() {
       }
 
       stats[pick.user_id].total += 1;
-
-      stats[pick.user_id].net_units += Number(
-        pick.units ?? 0
-      );
-
+      stats[pick.user_id].net_units += Number(pick.units ?? 0);
       stats[pick.user_id].results.push(result);
     });
 
@@ -151,7 +143,6 @@ export default function LeaderboardPage() {
       if (results.length === 0) return;
 
       const latestResult = results[results.length - 1];
-
       let streak = 0;
 
       for (let i = results.length - 1; i >= 0; i--) {
@@ -190,13 +181,13 @@ export default function LeaderboardPage() {
         return b.net_units - a.net_units;
       }
 
-      const aPercentage =
-        a.total > 0 ? a.wins / a.total : 0;
+      const aPercentage = a.total > 0 ? a.wins / a.total : 0;
+      const bPercentage = b.total > 0 ? b.wins / b.total : 0;
 
-      const bPercentage =
-        b.total > 0 ? b.wins / b.total : 0;
+      if (bPercentage !== aPercentage) {
+        return bPercentage - aPercentage;
+      }
 
-      if (bPercentage !== aPercentage) return bPercentage - aPercentage;
       return b.wins - a.wins;
     });
 
@@ -205,7 +196,11 @@ export default function LeaderboardPage() {
   }
 
   useEffect(() => {
+    // This effect intentionally loads external Supabase data when the sport filter changes.
+    // The data-loading function updates component state as part of that async operation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadLeaderboard();
+
     // The filter is the only input to this data load; the function is recreated per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportFilter]);
@@ -235,11 +230,8 @@ export default function LeaderboardPage() {
       return "The numbers have been reviewed. The numbers regret getting involved.";
     }
 
-    const index = Math.floor(
-      Math.random() * messages.length
-    );
-
-    return messages[index];
+    // Keep Oracle output deterministic so React renders remain pure.
+    return messages[0];
   }
 
   function getOracle() {
@@ -256,15 +248,11 @@ export default function LeaderboardPage() {
     );
 
     const hottest = winningStreakPlayers.length
-      ? [...winningStreakPlayers].sort(
-          (a, b) => b.streak - a.streak
-        )[0]
+      ? [...winningStreakPlayers].sort((a, b) => b.streak - a.streak)[0]
       : null;
 
     const coldest = losingStreakPlayers.length
-      ? [...losingStreakPlayers].sort(
-          (a, b) => b.streak - a.streak
-        )[0]
+      ? [...losingStreakPlayers].sort((a, b) => b.streak - a.streak)[0]
       : null;
 
     const leader = leaderboard[0];
@@ -281,10 +269,9 @@ export default function LeaderboardPage() {
     const maxStreak = hottest?.streak ?? 0;
     const maxLosingStreak = coldest?.streak ?? 0;
 
-    const leaderSecondGap =
-      second
-        ? leader.net_units - second.net_units
-        : Infinity;
+    const leaderSecondGap = second
+      ? leader.net_units - second.net_units
+      : Infinity;
 
     /*
      * PRIORITY 1:
@@ -316,10 +303,7 @@ export default function LeaderboardPage() {
      * PRIORITY 3:
      * Extremely close race.
      */
-    if (
-      second &&
-      Math.abs(leaderSecondGap) < 0.5
-    ) {
+    if (second && Math.abs(leaderSecondGap) < 0.5) {
       return pickOracleMessage([
         `First and second are separated by ${leaderSecondGap.toFixed(2)} units. One bad pick could rewrite the entire leaderboard.`,
         `${leader.user_name} leads ${second.user_name} by less than half a unit. This is no longer a leaderboard. It's a hostage situation.`,
@@ -332,10 +316,7 @@ export default function LeaderboardPage() {
      * PRIORITY 4:
      * Tight race within one unit.
      */
-    if (
-      second &&
-      Math.abs(leaderSecondGap) < 1
-    ) {
+    if (second && Math.abs(leaderSecondGap) < 1) {
       return pickOracleMessage([
         `The difference between first and second is currently one terrible decision.`,
         `${leader.user_name} leads by just ${leaderSecondGap.toFixed(2)} units. Nobody should be comfortable.`,
@@ -348,10 +329,7 @@ export default function LeaderboardPage() {
      * PRIORITY 5:
      * Nobody profitable.
      */
-    if (
-      positivePlayers.length === 0 &&
-      leaderboard.length >= 2
-    ) {
+    if (positivePlayers.length === 0 && leaderboard.length >= 2) {
       return pickOracleMessage([
         `Nobody is profitable. The leaderboard has become a crime scene.`,
         `Everyone is down money. Congratulations to whoever is losing the least.`,
@@ -393,10 +371,7 @@ export default function LeaderboardPage() {
      * PRIORITY 8:
      * Leader is on a strong winning streak.
      */
-    if (
-      leader.streakType === "W" &&
-      leader.streak >= 3
-    ) {
+    if (leader.streakType === "W" && leader.streak >= 3) {
       return pickOracleMessage([
         `${leader.user_name} is on a ${leader.streak}-game winning streak. Confidence is now the biggest liability.`,
         `${leader.user_name} has won ${leader.streak} straight and is beginning to believe the picks are skill.`,
@@ -409,10 +384,7 @@ export default function LeaderboardPage() {
      * PRIORITY 9:
      * Leader is on a losing streak.
      */
-    if (
-      leader.streakType === "L" &&
-      leader.streak >= 3
-    ) {
+    if (leader.streakType === "L" && leader.streak >= 3) {
       return pickOracleMessage([
         `${leader.user_name} has lost ${leader.streak} straight. A bold strategy. Unfortunately, it appears to be the wrong one.`,
         `${leader.user_name} is still in first despite losing ${leader.streak} straight. Everyone else should be concerned.`,
@@ -425,10 +397,7 @@ export default function LeaderboardPage() {
      * PRIORITY 10:
      * One player is clearly the only profitable one.
      */
-    if (
-      positivePlayers.length === 1 &&
-      leaderboard.length >= 3
-    ) {
+    if (positivePlayers.length === 1 && leaderboard.length >= 3) {
       const onlyWinner = positivePlayers[0];
 
       return pickOracleMessage([
@@ -486,29 +455,40 @@ export default function LeaderboardPage() {
         <h1 className="text-3xl font-bold tracking-tight text-gray-900">
           Leaderboard
         </h1>
-
         <p className="mt-1.5 text-sm text-gray-600 sm:mt-2 sm:text-base">
           Net units settle the argument. Everyone else is just keeping score.
         </p>
       </div>
 
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
-        {[["all", "All"], ["nfl", "NFL"], ["ncaaf", "NCAAF"]].map(([value, label]) => (
-          <button key={value} onClick={() => setSportFilter(value as "all" | "nfl" | "ncaaf")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition ${sportFilter === value ? "bg-green-600 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100"}`}>{label}</button>
+        {[
+          ["all", "All"],
+          ["nfl", "NFL"],
+          ["ncaaf", "NCAAF"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() =>
+              setSportFilter(value as "all" | "nfl" | "ncaaf")
+            }
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+              sportFilter === value
+                ? "bg-green-600 text-white"
+                : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100"
+            }`}
+          >
+            {label}
+          </button>
         ))}
       </div>
 
       {loading ? (
         <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <p className="text-gray-600">
-            Loading leaderboard...
-          </p>
+          <p className="text-gray-600">Loading leaderboard...</p>
         </div>
       ) : leaderboard.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <p className="text-gray-600">
-            No completed wagers yet.
-          </p>
+          <p className="text-gray-600">No completed wagers yet.</p>
         </div>
       ) : (
         <>
@@ -537,24 +517,21 @@ export default function LeaderboardPage() {
               "
             >
               <div>#</div>
-
               <div>Player</div>
-
-              <div className="text-center">Record</div><div className="text-center">Units</div><div className="hidden text-center sm:block">Win %</div><div className="hidden text-center sm:block">Streak</div>
+              <div className="text-center">Record</div>
+              <div className="text-center">Units</div>
+              <div className="hidden text-center sm:block">Win %</div>
+              <div className="hidden text-center sm:block">Streak</div>
             </div>
 
             {/* Players */}
             {leaderboard.map((player, index) => {
               const winPercentage =
                 player.total > 0
-                  ? Math.round(
-                      (player.wins / player.total) * 100
-                    )
+                  ? Math.round((player.wins / player.total) * 100)
                   : 0;
 
-              const isCurrentUser =
-                player.user_id === currentUserId;
-
+              const isCurrentUser = player.user_id === currentUserId;
               const isFirst = index === 0;
               const isSecond = index === 1;
               const isThird = index === 2;
@@ -591,16 +568,22 @@ export default function LeaderboardPage() {
                         isCurrentUser
                           ? "text-green-700"
                           : isFirst
-                          ? "text-gray-900"
-                          : isSecond
-                          ? "text-gray-600"
-                          : isThird
-                          ? "text-gray-500"
-                          : "text-gray-400"
+                            ? "text-gray-900"
+                            : isSecond
+                              ? "text-gray-600"
+                              : isThird
+                                ? "text-gray-500"
+                                : "text-gray-400"
                       }
                     `}
                   >
-                    {isFirst ? "🥇" : isSecond ? "🥈" : isThird ? "🥉" : index + 1}
+                    {isFirst
+                      ? "🥇"
+                      : isSecond
+                        ? "🥈"
+                        : isThird
+                          ? "🥉"
+                          : index + 1}
                   </div>
 
                   {/* Player */}
@@ -632,7 +615,9 @@ export default function LeaderboardPage() {
                     </div>
                   </div>
 
-                  <div className="text-center text-xs font-bold text-gray-700 sm:text-base">{player.wins}–{player.losses}–{player.pushes}</div>
+                  <div className="text-center text-xs font-bold text-gray-700 sm:text-base">
+                    {player.wins}–{player.losses}–{player.pushes}
+                  </div>
 
                   {/* Units */}
                   <div
@@ -645,8 +630,8 @@ export default function LeaderboardPage() {
                         player.net_units > 0
                           ? "text-green-600"
                           : player.net_units < 0
-                          ? "text-red-600"
-                          : "text-gray-900"
+                            ? "text-red-600"
+                            : "text-gray-900"
                       }
                     `}
                   >
@@ -654,7 +639,9 @@ export default function LeaderboardPage() {
                     {player.net_units.toFixed(2)}u
                   </div>
 
-                  <div className="hidden text-center text-xs font-bold text-gray-900 sm:block">{winPercentage}%</div>
+                  <div className="hidden text-center text-xs font-bold text-gray-900 sm:block">
+                    {winPercentage}%
+                  </div>
 
                   <div
                     className={`
@@ -663,13 +650,11 @@ export default function LeaderboardPage() {
                       font-extrabold
                       sm:text-sm
                       ${
-                        player.streakType === "W" &&
-                        player.streak >= 3
+                        player.streakType === "W" && player.streak >= 3
                           ? "text-orange-600"
-                          : player.streakType === "L" &&
-                            player.streak >= 3
-                          ? "text-blue-500"
-                          : "text-gray-600"
+                          : player.streakType === "L" && player.streak >= 3
+                            ? "text-blue-500"
+                            : "text-gray-600"
                       }
                     `}
                   >

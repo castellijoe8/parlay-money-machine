@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import { supabase } from "@/lib/supabase";
 
 export default function ProfilePage() {
@@ -9,10 +10,6 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    loadProfile();
-  }, []);
 
   async function loadProfile() {
     setLoading(true);
@@ -47,6 +44,13 @@ export default function ProfilePage() {
     setLoading(false);
   }
 
+  useEffect(() => {
+    // This effect intentionally loads profile data from Supabase on mount.
+    // The async operation updates local state as the external data arrives.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadProfile();
+  }, []);
+
   async function saveProfile() {
     const trimmedName = displayName.trim();
 
@@ -78,17 +82,15 @@ export default function ProfilePage() {
       return;
     }
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: user.id,
-          display_name: trimmedName,
-        },
-        {
-          onConflict: "id",
-        }
-      );
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        display_name: trimmedName,
+      },
+      {
+        onConflict: "id",
+      }
+    );
 
     if (error) {
       console.error("Profile save error:", error);
@@ -123,9 +125,7 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen bg-gray-50 px-6 py-8">
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Profile
-        </h1>
+        <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
 
         <p className="mt-1 text-gray-500">
           Choose the name other players will see.
@@ -140,24 +140,20 @@ export default function ProfilePage() {
           </label>
 
           <p className="mt-1 text-sm text-gray-500">
-            This name will be displayed throughout Friendly Wager.
+            This name will be displayed throughout Parlay Money Machine.
           </p>
 
           <input
             id="displayName"
             type="text"
             value={displayName}
-            onChange={(event) =>
-              setDisplayName(event.target.value)
-            }
+            onChange={(event) => setDisplayName(event.target.value)}
             maxLength={20}
             placeholder="Enter your profile name"
             className="mt-4 w-full rounded-lg border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
           />
 
-          <p className="mt-2 text-xs text-gray-400">
-            3–20 characters
-          </p>
+          <p className="mt-2 text-xs text-gray-400">3–20 characters</p>
 
           <button
             onClick={saveProfile}
@@ -168,23 +164,20 @@ export default function ProfilePage() {
           </button>
 
           {message && (
-            <p className="mt-4 text-sm font-medium text-gray-700">
-              {message}
-            </p>
+            <p className="mt-4 text-sm font-medium text-gray-700">{message}</p>
           )}
 
           {email && (
             <div className="mt-8 border-t border-gray-100 pt-5">
-              <p className="text-sm text-gray-500">
-                Account Email
-              </p>
+              <p className="text-sm text-gray-500">Account Email</p>
 
               <p className="mt-1 text-sm font-medium text-gray-900">
                 {email}
               </p>
 
               <p className="mt-1 text-xs text-gray-400">
-                Your email is used for login and is not your public profile name.
+                Your email is used for login and is not your public profile
+                name.
               </p>
             </div>
           )}

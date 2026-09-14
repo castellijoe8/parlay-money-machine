@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Sport = "ncaaf" | "nfl";
@@ -489,6 +490,7 @@ function gameMatchesConference(
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [games, setGames] = useState<Game[]>([]);
   const [userPicks, setUserPicks] = useState<
     Record<string, UserPick>
@@ -972,8 +974,7 @@ export default function HomePage() {
 
       saveScrollPosition();
 
-      window.location.href =
-        "/wagers";
+      router.push("/wagers");
     } catch (error) {
       console.error(
         "Unexpected wager error:",
@@ -1269,7 +1270,7 @@ export default function HomePage() {
                 <button
                   onClick={() => {
                     saveScrollPosition();
-                    window.location.href = `/wager/${game.id}`;
+                    router.push(`/wager/${game.id}`);
                   }}
                   className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-white transition hover:bg-gray-700 sm:px-3.5 sm:text-xs"
                 >
@@ -1608,7 +1609,7 @@ export default function HomePage() {
             <button
               onClick={() => {
                 saveScrollPosition();
-                window.location.href = `/wager/${game.id}`;
+                router.push(`/wager/${game.id}`);
               }}
               className="mt-3 w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-gray-700 active:scale-[0.99] sm:mt-4"
             >
@@ -1701,8 +1702,7 @@ export default function HomePage() {
           <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:grid-cols-3">
             <button
               onClick={() => {
-                window.location.href =
-                  "/wagers";
+                router.push("/wagers");
               }}
               className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-left transition hover:border-gray-300 hover:bg-gray-100"
             >
@@ -1720,8 +1720,7 @@ export default function HomePage() {
 
             <button
               onClick={() => {
-                window.location.href =
-                  "/leaderboard";
+                router.push("/leaderboard");
               }}
               className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-left transition hover:border-gray-300 hover:bg-gray-100"
             >
