@@ -35,6 +35,7 @@ type UserPick = {
 };
 
 type ViewFilter = "all" | "live" | "upcoming";
+type SportFilter = Sport;
 
 type NcaafConference =
   | "SEC"
@@ -487,6 +488,9 @@ export default function HomePage() {
   const [conferenceFilter, setConferenceFilter] =
     useState<ConferenceFilter>("all");
 
+  const [sportFilter, setSportFilter] =
+    useState<SportFilter>("ncaaf");
+
   const [selectedBet, setSelectedBet] =
     useState<BetOption | null>(null);
 
@@ -500,16 +504,6 @@ export default function HomePage() {
     loadGames();
     loadUserPicks();
 
-    const interval = setInterval(async () => {
-      try {
-        await fetch("/api/sync-scores");
-        await loadGames();
-        await loadUserPicks();
-      } catch (error) {
-        console.error("Score refresh error:", error);
-      }
-    }, 60 * 1000);
-
     const handleScroll = () => {
       sessionStorage.setItem(
         SCROLL_KEY,
@@ -520,7 +514,6 @@ export default function HomePage() {
     window.addEventListener("scroll", handleScroll);
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener(
         "scroll",
         handleScroll
@@ -1013,13 +1006,24 @@ export default function HomePage() {
         ).getTime()
     );
 
-  /*
-   * Conference filtering is applied independently from
-   * Live / Upcoming filtering.
-   */
-  const conferenceFilteredLiveGames =
+  const sportFilteredLiveGames =
     useMemo(() => {
       return liveGames.filter(
+        (game) => getGameSport(game) === sportFilter
+      );
+    }, [liveGames, sportFilter]);
+
+  const sportFilteredUpcomingGames =
+    useMemo(() => {
+      return upcomingGames.filter(
+        (game) => getGameSport(game) === sportFilter
+      );
+    }, [upcomingGames, sportFilter]);
+
+  /* Conference filtering is NCAAF-only and follows sport filtering. */
+  const conferenceFilteredLiveGames =
+    useMemo(() => {
+      return sportFilteredLiveGames.filter(
         (game) =>
           gameMatchesConference(
             game,
@@ -1027,13 +1031,13 @@ export default function HomePage() {
           )
       );
     }, [
-      liveGames,
+      sportFilteredLiveGames,
       conferenceFilter,
     ]);
 
   const conferenceFilteredUpcomingGames =
     useMemo(() => {
-      return upcomingGames.filter(
+      return sportFilteredUpcomingGames.filter(
         (game) =>
           gameMatchesConference(
             game,
@@ -1041,7 +1045,7 @@ export default function HomePage() {
           )
       );
     }, [
-      upcomingGames,
+      sportFilteredUpcomingGames,
       conferenceFilter,
     ]);
 
@@ -1611,6 +1615,13 @@ export default function HomePage() {
         : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
     }`;
 
+  const sportButtonClass = (sport: SportFilter) =>
+    `shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+      sportFilter === sport
+        ? "bg-green-600 text-white shadow-sm"
+        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+    }`;
+
   return (
     <main
       className={`min-h-screen bg-gray-50 px-3 py-4 sm:px-6 sm:py-8 ${
@@ -1758,11 +1769,11 @@ export default function HomePage() {
               >
                 Live
 
-                {liveGames.length >
+                {sportFilteredLiveGames.length >
                   0 && (
                   <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] text-red-700">
                     {
-                      liveGames.length
+                      sportFilteredLiveGames.length
                     }
                   </span>
                 )}
@@ -1793,9 +1804,27 @@ export default function HomePage() {
             </span>
           </div>
 
-          {/* Conference Filters */}
+          {/* Sport Filters */}
           <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white">
             <div className="flex gap-1.5 overflow-x-auto p-1.5 scrollbar-hide">
+              {(["ncaaf", "nfl"] as SportFilter[]).map(
+                (sport) => (
+                  <button
+                    key={sport}
+                    onClick={() => setSportFilter(sport)}
+                    className={sportButtonClass(sport)}
+                  >
+                    {sport === "ncaaf" ? "NCAAF" : "NFL"}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          {/* Conference Filters */}
+          {sportFilter === "ncaaf" ? (
+            <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <div className="flex gap-1.5 overflow-x-auto p-1.5 scrollbar-hide">
               {NCAAF_CONFERENCE_FILTERS.map(
                 (filter) => (
                   <button
@@ -1813,8 +1842,9 @@ export default function HomePage() {
                   </button>
                 )
               )}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {loading ? (
             <div className="mt-3 rounded-2xl bg-white p-6 shadow-sm">

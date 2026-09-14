@@ -1,8 +1,36 @@
 {
   "crons": [
     {
+      "path": "/api/sync-games",
+      "schedule": "0 16 * * 1-5"
+    },
+    {
       "path": "/api/sync-scores",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 16 * * 1-5"
+    },
+    {
+      "path": "/api/sync-games",
+      "schedule": "0 2 * * 2-6"
+    },
+    {
+      "path": "/api/sync-scores",
+      "schedule": "0 2 * * 2-6"
+    },
+    {
+      "path": "/api/sync-games",
+      "schedule": "0 16,19,22 * * 6,0"
+    },
+    {
+      "path": "/api/sync-scores",
+      "schedule": "0 16,19,22 * * 6,0"
+    },
+    {
+      "path": "/api/sync-games",
+      "schedule": "0 1,4,7 * * 0,1"
+    },
+    {
+      "path": "/api/sync-scores",
+      "schedule": "0 1,4,7 * * 0,1"
     }
   ]
 }
