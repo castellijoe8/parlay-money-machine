@@ -7,7 +7,7 @@ create table if not exists public.game_odds_snapshots (
   observed_at timestamptz not null default now(),
   provider_updated_at timestamptz,
   outcomes jsonb not null default '[]'::jsonb check (jsonb_typeof(outcomes) = 'array'),
-  odds_fingerprint text generated always as (md5(outcomes::text || '|' || coalesce(provider_updated_at::text, ''))) stored,
+  odds_fingerprint text not null,
   unique (game_id, sportsbook, market, odds_fingerprint)
 );
 

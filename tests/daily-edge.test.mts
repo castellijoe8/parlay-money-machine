@@ -3,6 +3,7 @@ import test from "node:test";
 import { atsRecord, buildWeeklyNuggets, historicalLine, indexOddsSnapshots, teamForm, totalsRecord, type FinalGame, type OddsSnapshot } from "../lib/daily-edge.ts";
 import { getCurrentCollegeSeasonStart, getPacificWeekWindow, isWithinWeeklyWindow } from "../lib/daily-edge-window.ts";
 import { isDailyEdgeRefreshAuthorized } from "../lib/daily-edge-refresh.ts";
+import { oddsSnapshotFingerprint } from "../lib/odds-snapshot-fingerprint.ts";
 
 function finalGame(id: string, startsAt: string, awayScore: number, homeScore: number, overrides: Partial<FinalGame> = {}): FinalGame {
   return { id, sport: "nfl", away_team: "Team A", home_team: "Team B", starts_at: startsAt, status: "final", away_score: awayScore, home_score: homeScore, ...overrides };
@@ -102,4 +103,16 @@ test("manual refresh requires the configured bearer secret", () => {
   assert.equal(isDailyEdgeRefreshAuthorized("Bearer wrong", "secret"), false);
   assert.equal(isDailyEdgeRefreshAuthorized("Bearer secret", "secret"), true);
   assert.equal(isDailyEdgeRefreshAuthorized("Bearer secret", undefined), false);
+});
+
+test("odds snapshot fingerprints are stable across outcome order and change with the provider update", () => {
+  const outcomes = [
+    { name: "Under", point: 45.5, price: -110 },
+    { name: "Over", point: 45.5, price: -110 },
+  ];
+  const fingerprint = oddsSnapshotFingerprint(outcomes, "2026-10-30T12:00:00Z");
+
+  assert.equal(fingerprint, oddsSnapshotFingerprint([...outcomes].reverse(), "2026-10-30T12:00:00Z"));
+  assert.notEqual(fingerprint, oddsSnapshotFingerprint(outcomes, "2026-10-30T12:05:00Z"));
+  assert.match(fingerprint, /^[a-f0-9]{64}$/);
 });

@@ -4,6 +4,9 @@ import { SPORT_API_CONFIG, SPORTS, type SupportedSport } from "@/lib/sports";
 import { getSyncMinimumIntervalMinutes, isSyncDue } from "@/lib/sync-schedule";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { finishSystemJobRun, startSystemJobRun } from "@/lib/system-job-runs";
+import { oddsSnapshotFingerprint } from "@/lib/odds-snapshot-fingerprint";
+
+export const runtime = "nodejs";
 
 type OddsApiGame = {
   id: string;
@@ -97,15 +100,20 @@ async function syncSportOdds(supabase: SupabaseClient, sport: SupportedSport, ap
       const snapshots = bookmakers.flatMap((source) =>
         (source.markets ?? [])
           .filter((market) => ["spreads", "totals", "h2h"].includes(market.key) && (market.outcomes?.length ?? 0) > 0)
-          .map((market) => ({
-            game_id: saveResult.data.id,
-            sport,
-            sportsbook: source.key,
-            market: market.key,
-            observed_at: observedAt,
-            provider_updated_at: market.last_update ?? source.last_update ?? null,
-            outcomes: market.outcomes,
-          }))
+          .map((market) => {
+            const providerUpdatedAt = market.last_update ?? source.last_update ?? null;
+            const outcomes = market.outcomes ?? [];
+            return {
+              game_id: saveResult.data.id,
+              sport,
+              sportsbook: source.key,
+              market: market.key,
+              observed_at: observedAt,
+              provider_updated_at: providerUpdatedAt,
+              outcomes,
+              odds_fingerprint: oddsSnapshotFingerprint(outcomes, providerUpdatedAt),
+            };
+          })
       );
       if (snapshots.length) {
         const { error: snapshotError } = await supabase.from("game_odds_snapshots").upsert(snapshots, {
