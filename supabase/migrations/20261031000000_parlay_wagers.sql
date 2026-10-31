@@ -122,7 +122,7 @@ grant execute on function public.create_parlay_wager(uuid,text,numeric,uuid,bigi
 
 create or replace function public.settle_parlay_legs(game_id_input uuid)
 returns void language plpgsql security definer set search_path = public, pg_temp as $$
-declare game_row public.games%rowtype; leg_row record; leg_result text; wager_row record; effective_decimal numeric; any_winning_leg boolean;
+declare game_row public.games%rowtype; leg_row record; leg_result text; wager_row record; effective_decimal numeric; any_winning_leg boolean; any_pushed_leg boolean;
 begin
   select * into game_row from public.games where id = game_id_input;
   if not found or game_row.status <> 'final' or game_row.home_score is null or game_row.away_score is null then return; end if;
@@ -144,8 +144,8 @@ begin
     if exists (select 1 from public.parlay_legs where parlay_id = wager_row.id and result = 'lost') then
       update public.parlay_wagers set status='lost', actual_return=0, settled_at=now() where id=wager_row.id and status='pending';
     elsif not exists (select 1 from public.parlay_legs where parlay_id=wager_row.id and result='pending') then
-      select coalesce(exp(sum(ln(decimal_odds)) filter (where result='won')),1), bool_or(result='won') into effective_decimal,any_winning_leg from public.parlay_legs where parlay_id=wager_row.id;
-      update public.parlay_wagers set status=case when any_winning_leg then 'won' else 'push' end,
+      select coalesce(exp(sum(ln(decimal_odds)) filter (where result='won')),1), bool_or(result='won'), bool_or(result='push') into effective_decimal,any_winning_leg,any_pushed_leg from public.parlay_legs where parlay_id=wager_row.id;
+      update public.parlay_wagers set status=case when any_winning_leg then 'won' when any_pushed_leg then 'push' else 'void' end,
         actual_return=case when any_winning_leg then round(wager_row.stake*effective_decimal,2) else wager_row.stake end, settled_at=now() where id=wager_row.id and status='pending';
     end if;
   end loop;
