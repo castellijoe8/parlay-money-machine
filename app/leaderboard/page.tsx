@@ -6,13 +6,10 @@ import { supabase } from "@/lib/supabase";
 
 type Pick = {
   user_id: string;
+  sports: string[];
   result: string | null;
   units: number | null;
   created_at: string;
-  game:
-    | { sport: "ncaaf" | "nfl" | null }
-    | Array<{ sport: "ncaaf" | "nfl" | null }>
-    | null;
 };
 
 type LeaderboardRow = {
@@ -50,8 +47,8 @@ export default function LeaderboardPage() {
     setCurrentUserId(user?.id ?? null);
 
     const { data: picks, error: picksError } = await supabase
-      .from("picks")
-      .select("user_id, result, units, created_at, game:games(sport)")
+      .from("wager_records")
+      .select("user_id, result, units, created_at, sports")
       .order("created_at", { ascending: true });
 
     if (picksError) {
@@ -93,9 +90,7 @@ export default function LeaderboardPage() {
     picks.forEach((pick: Pick) => {
       if (!pick.user_id) return;
 
-      const game = Array.isArray(pick.game) ? pick.game[0] : pick.game;
-
-      if (sportFilter !== "all" && game?.sport !== sportFilter) return;
+      if (sportFilter !== "all" && !pick.sports.includes(sportFilter)) return;
 
       const result = String(pick.result ?? "")
         .trim()

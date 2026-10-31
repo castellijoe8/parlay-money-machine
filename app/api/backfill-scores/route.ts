@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { authorizeCron } from "@/lib/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = authorizeCron(request);
+  if (denied) return denied;
   const supabase = createSupabaseAdminClient();
   if (!supabase) {
     return NextResponse.json(

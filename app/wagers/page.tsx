@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { wagerRecord, normalizeResult } from "@/lib/betting";
 import { supabase } from "@/lib/supabase";
 
 type Wager = {
@@ -24,13 +25,14 @@ type Wager = {
 
 type Parlay = {
   id: string; stake: number; combined_american_odds: number; combined_decimal_odds: number;
+  pricing_method: string;
   potential_return: number; potential_profit: number; actual_return: number | null; status: string; created_at: string;
   legs: Array<{ id: string; game_id: string; sport: string; market: string; selection: string; line: number | null; american_odds: number; result: string; game: { away_team: string; home_team: string; starts_at: string; status: string } | null }>;
 };
 
 type ResultFilter = "all" | "pending" | "wins" | "losses" | "pushes";
 type TimeFilter = "all" | "week" | "month" | "season";
-type BetTypeFilter = "all" | "spread" | "moneyline" | "total";
+type BetTypeFilter = "all" | "spread" | "moneyline" | "total" | "parlay";
 type SortOption = "newest" | "oldest" | "biggest-win" | "biggest-loss";
 type SportFilter = "all" | "ncaaf" | "nfl";
 
@@ -94,8 +96,8 @@ export default function WagersPage() {
       return;
     }
 
-    const { data: parlayData, error: parlayError } = await supabase.from("parlay_wagers").select("id,stake,combined_american_odds,combined_decimal_odds,potential_return,potential_profit,actual_return,status,created_at,legs:parlay_legs(id,game_id,sport,market,selection,line,american_odds,result,game:games(away_team,home_team,starts_at,status))").eq("user_id", user.id).order("created_at", { ascending: false });
-    if (parlayError) console.error("Error loading parlays:", parlayError);
+    const { data: parlayData, error: parlayError } = await supabase.from("parlay_wagers").select("id,pricing_method,stake,combined_american_odds,combined_decimal_odds,potential_return,potential_profit,actual_return,status,created_at,legs:parlay_legs(id,game_id,sport,market,selection,line,american_odds,result,game:games(away_team,home_team,starts_at,status))").eq("user_id", user.id).order("created_at", { ascending: false });
+    if (parlayError) { console.error("Error loading parlays:", parlayError); setMessage("Unable to load parlay history. Check the database migration before placing more wagers."); }
     setParlays((parlayData as unknown as Parlay[]) ?? []);
 
     setWagers((data as unknown as Wager[]) || []);
@@ -119,24 +121,29 @@ export default function WagersPage() {
     void loadWagers();
   }, []);
 
+  const summaryWagers = useMemo(() => [
+    ...wagers.map((wager) => ({ result: wager.result, units: wager.units, created_at: wager.created_at })),
+    ...parlays.map((parlay) => ({ ...wagerRecord(parlay.status, Number(parlay.stake), parlay.actual_return === null ? null : Number(parlay.actual_return)), created_at: parlay.created_at })),
+  ], [wagers, parlays]);
+
   const pending = useMemo(
     () =>
-      wagers.filter(
+      summaryWagers.filter(
         (wager) =>
           !wager.result ||
           wager.result.toLowerCase() === "pending"
       ),
-    [wagers]
+    [summaryWagers]
   );
 
   const completed = useMemo(
     () =>
-      wagers.filter(
+      summaryWagers.filter(
         (wager) =>
           wager.result &&
           wager.result.toLowerCase() !== "pending"
       ),
-    [wagers]
+    [summaryWagers]
   );
 
   const wins = useMemo(
@@ -244,7 +251,7 @@ export default function WagersPage() {
     return new Date(now.getFullYear(), 0, 1);
   }
 
-  const matchesTimeFilter = useCallback((wager: Wager) => {
+  const matchesTimeFilter = useCallback((wager: { created_at: string }) => {
     if (timeFilter === "all") return true;
 
     const wagerDate = new Date(wager.created_at);
@@ -301,7 +308,7 @@ export default function WagersPage() {
   }, [betTypeFilter]);
 
   const matchesResultFilter = useCallback(
-    (wager: Wager) => {
+    (wager: { result: string | null }) => {
       const result = wager.result?.toLowerCase();
 
       if (resultFilter === "all") return true;
@@ -340,6 +347,16 @@ export default function WagersPage() {
     matchesResultFilter,
     matchesSportFilter,
   ]);
+
+  const filteredParlays = useMemo(() => parlays.filter((parlay) =>
+    matchesTimeFilter(parlay) && matchesResultFilter({ result: normalizeResult(parlay.status) })
+    && (betTypeFilter === "all" || betTypeFilter === "parlay")
+    && (sportFilter === "all" || parlay.legs.some((leg) => leg.sport === sportFilter))
+  ).sort((a, b) => {
+    if (sortOption === "biggest-win") return (Number(b.actual_return ?? b.stake) - Number(b.stake)) - (Number(a.actual_return ?? a.stake) - Number(a.stake));
+    if (sortOption === "biggest-loss") return (Number(a.actual_return ?? a.stake) - Number(a.stake)) - (Number(b.actual_return ?? b.stake) - Number(b.stake));
+    return (sortOption === "oldest" ? 1 : -1) * (Date.parse(a.created_at) - Date.parse(b.created_at));
+  }), [parlays, matchesTimeFilter, matchesResultFilter, betTypeFilter, sportFilter, sortOption]);
 
   const filteredPending = useMemo(
     () =>
@@ -772,6 +789,7 @@ export default function WagersPage() {
               ["spread", "Spread"],
               ["moneyline", "Moneyline"],
               ["total", "Total"],
+              ["parlay", "Parlays"],
             ].map(([value, label]) => (
               <button
                 key={value}
@@ -812,7 +830,7 @@ export default function WagersPage() {
         </div>
       ) : (
         <>
-          {parlays.length > 0 && <section className="mb-8"><h2 className="mb-3 text-lg font-black">Parlays <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">{parlays.length}</span></h2><div className="space-y-3">{parlays.map((parlay) => <details key={parlay.id} className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm"><summary className="cursor-pointer list-none"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-green-100 px-2 py-1 text-[10px] font-black uppercase text-green-800">Parlay · {parlay.legs.length} legs</span>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <span className="ml-2 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">SGP estimate</span>}<p className="mt-2 text-sm font-extrabold">Combined odds {parlay.combined_american_odds > 0 ? "+" : ""}{parlay.combined_american_odds}</p><p className="text-xs text-gray-500">{new Date(parlay.created_at).toLocaleString()} · {Number(parlay.stake).toFixed(2)} units staked</p></div><div className="text-right"><p className="text-sm font-black uppercase">{parlay.status}</p><p className="text-xs text-gray-500">{parlay.actual_return !== null ? `Return ${Number(parlay.actual_return).toFixed(2)} units` : `Potential return ${Number(parlay.potential_return).toFixed(2)} units`}</p><p className="text-xs text-gray-500">Potential profit {Number(parlay.potential_profit).toFixed(2)} units</p></div></div>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <p className="mt-2 text-xs text-amber-800">Same-game odds use an independent-leg estimate and may differ from a combined sportsbook quote.</p>}</summary><div className="mt-3"><button onClick={() => void shareParlay(parlay.id)} className="rounded-lg border px-3 py-2 text-xs font-bold">{shareLinks[parlay.id] ? "Copy share link" : "Share parlay"}</button>{shareLinks[parlay.id] && <a href={shareLinks[parlay.id]} className="ml-2 break-all text-xs text-green-700">{shareLinks[parlay.id]}</a>}</div><div className="mt-3 space-y-2 border-t pt-3">{parlay.legs.map((leg) => <div key={leg.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-gray-50 p-2.5 text-xs"><div><p className="font-bold">{leg.selection} {leg.market === "Moneyline" ? "ML" : leg.line === null ? "" : leg.market === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.american_odds > 0 ? "+" : ""}{leg.american_odds}</span></p><p className="text-gray-500">{leg.sport.toUpperCase()} · {leg.game?.away_team} vs. {leg.game?.home_team}</p></div><span className="font-bold uppercase">{leg.result}{leg.game?.status === "live" ? " · live" : ""}</span></div>)}</div></details>)}</div><p className="mt-2 text-xs text-gray-500">Parlay wagers use social units only. No money is collected or paid.</p></section>}
+          {filteredParlays.length > 0 && <section className="mb-8"><h2 className="mb-3 text-lg font-black">Parlays <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">{filteredParlays.length}</span></h2><div className="space-y-3">{filteredParlays.map((parlay) => <details key={parlay.id} className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm"><summary className="cursor-pointer list-none"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-green-100 px-2 py-1 text-[10px] font-black uppercase text-green-800">Parlay · {parlay.legs.length} legs</span>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <span className="ml-2 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">Legacy SGP estimate</span>}<p className="mt-2 text-[10px] text-gray-500">Pricing: {parlay.pricing_method === "independent_games" ? "Independent games" : "Legacy estimate"}</p><p className="mt-2 text-sm font-extrabold">Combined odds {parlay.combined_american_odds > 0 ? "+" : ""}{parlay.combined_american_odds}</p><p className="text-xs text-gray-500">{new Date(parlay.created_at).toLocaleString()} · {Number(parlay.stake).toFixed(2)} units staked</p></div><div className="text-right"><p className="text-sm font-black uppercase">{parlay.status}</p><p className="text-xs text-gray-500">{parlay.actual_return !== null ? `Return ${Number(parlay.actual_return).toFixed(2)} units` : `Potential return ${Number(parlay.potential_return).toFixed(2)} units`}</p><p className="text-xs text-gray-500">Potential profit {Number(parlay.potential_profit).toFixed(2)} units</p></div></div>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <p className="mt-2 text-xs text-amber-800">Historical wager: accepted under the previous independent-leg estimate. New same-game wagers require a reliable combined quote.</p>}</summary><div className="mt-3"><button onClick={() => void shareParlay(parlay.id)} className="rounded-lg border px-3 py-2 text-xs font-bold">{shareLinks[parlay.id] ? "Copy share link" : "Share parlay"}</button>{shareLinks[parlay.id] && <a href={shareLinks[parlay.id]} className="ml-2 break-all text-xs text-green-700">{shareLinks[parlay.id]}</a>}</div><div className="mt-3 space-y-2 border-t pt-3">{parlay.legs.map((leg) => <div key={leg.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-gray-50 p-2.5 text-xs"><div><p className="font-bold">{leg.selection} {leg.market === "Moneyline" ? "ML" : leg.line === null ? "" : leg.market === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.american_odds > 0 ? "+" : ""}{leg.american_odds}</span></p><p className="text-gray-500">{leg.sport.toUpperCase()} · {leg.game?.away_team} vs. {leg.game?.home_team}</p></div><span className="font-bold uppercase">{leg.result}{leg.game?.status === "live" ? " · live" : ""}</span></div>)}</div></details>)}</div><p className="mt-2 text-xs text-gray-500">Parlay wagers use social units only. No money is collected or paid.</p></section>}
           {/* Pending Bets */}
           {filteredPending.length > 0 && (
             <section className="mb-8">
@@ -923,7 +941,7 @@ export default function WagersPage() {
             {filteredCompleted.length === 0 ? (
               <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
                 <div className="text-sm font-semibold text-gray-600">
-                  No bets match these filters.
+                  No completed single wagers match these filters.
                 </div>
 
                 <button
