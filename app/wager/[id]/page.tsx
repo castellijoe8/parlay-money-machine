@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
+import { MatchupIntelligence } from "@/app/daily-edge-feed";
 
 type Game = {
   id: string;
+  sport: string | null;
   away_team: string;
   home_team: string;
   starts_at: string;
@@ -54,7 +56,7 @@ export default function WagerPage() {
       const { data, error } = await supabase
         .from("games")
         .select(
-          "id, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
+          "id, sport, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
         )
         .eq("id", gameId)
         .single();
@@ -439,6 +441,7 @@ export default function WagerPage() {
             )}
           </div>
         </div>
+        <MatchupIntelligence game={game} />
       </div>
     </main>
   );

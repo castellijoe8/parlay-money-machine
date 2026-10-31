@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { DailyEdgePreview } from "@/app/daily-edge-feed";
 
 type Sport = "ncaaf" | "nfl";
 
@@ -587,7 +588,10 @@ export default function HomePage() {
         );
 
         if (game.status === "live") {
-          return true;
+          const liveCutoff = new Date(
+            now.getTime() - 6 * 60 * 60 * 1000
+          );
+          return startTime >= liveCutoff;
         }
 
         return startTime >= now;
@@ -1752,6 +1756,8 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        <DailyEdgePreview />
 
         {/* Games */}
         <section className="mt-5 sm:mt-7">

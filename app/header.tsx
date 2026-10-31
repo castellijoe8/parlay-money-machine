@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 
 const navigation = [
   { href: "/", label: "Home" },
+  { href: "/daily-edge", label: "Daily Edge" },
   { href: "/wagers", label: "My Bets" },
   { href: "/friends", label: "Friends" },
   { href: "/leaderboard", label: "Leaderboard" },
@@ -84,7 +85,7 @@ export default function Header() {
       <nav className="mobile-dock" aria-label="Mobile navigation">
         {navigation.map(({ href, label }) => (
           <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "is-active" : ""}>
-            <span className="dock-glyph" aria-hidden="true">{label === "Home" ? "⌂" : label === "My Bets" ? "▤" : label === "Friends" ? "♧" : "♙"}</span>
+            <span className="dock-glyph" aria-hidden="true">{label === "Home" ? "⌂" : label === "Daily Edge" ? "✳" : label === "My Bets" ? "▤" : label === "Friends" ? "♧" : "♙"}</span>
             <span>{label}</span>
           </Link>
         ))}

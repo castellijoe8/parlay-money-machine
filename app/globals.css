@@ -89,6 +89,53 @@ input::placeholder { color: #748078; }
 .sign-in-button { padding: 10px 17px; border-radius: 8px; background: var(--green); color: #11170e; font-size: 13px; font-weight: 800; text-decoration: none; }
 .mobile-dock { display: none; }
 
+.edge-section { margin-top: 28px; padding: 23px; border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(145deg, #171e19, #111613 68%); }
+.edge-heading-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.edge-heading-row h2, .edge-page-hero h1 { margin: 3px 0 0; color: #f4f7f3; font-size: clamp(24px, 4vw, 34px); font-weight: 700; letter-spacing: -.04em; }
+.edge-heading-row > div > p:last-child, .edge-page-hero > p:last-child { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.edge-eyebrow { margin: 0; color: var(--green); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.edge-all-link, .edge-game-link { color: var(--green); font-size: 12px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.edge-all-link:hover, .edge-game-link:hover { color: #d3f99f; }
+.edge-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.edge-card { display: flex; min-width: 0; flex-direction: column; padding: 17px; border: 1px solid #2b352d; border-radius: 14px; background: #111613; }
+.edge-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.edge-category { color: var(--green); font-size: 9px; font-weight: 900; letter-spacing: .15em; }
+.edge-freshness { color: #78847b; font-size: 9px; white-space: nowrap; }
+.edge-card h3 { margin: 14px 0 4px; color: #f2f5f1; font-size: 17px; line-height: 1.25; }
+.edge-matchup { margin: 2px 0 12px; color: #a4afa6; font-size: 11px; font-weight: 700; }
+.edge-matchup span { color: #657168; }
+.edge-stat { margin: 0; color: #f0f4ef; font-size: 13px; font-weight: 700; line-height: 1.5; }
+.edge-reason { flex: 1; margin: 9px 0 15px; color: #98a39a; font-size: 11px; line-height: 1.55; }
+.edge-game-link { align-self: flex-start; }
+.edge-state { margin: 19px 0 2px; padding: 15px; border: 1px dashed #334037; border-radius: 12px; color: #9ba69d; font-size: 13px; }
+.edge-page { min-height: calc(100vh - 76px); padding: 42px 24px 80px; background: radial-gradient(ellipse at 50% -15%, #233121 0, transparent 45%), var(--background); }
+.edge-page-inner { width: min(1120px, 100%); margin: auto; }
+.edge-page-hero { padding: 30px 0 26px; }
+.edge-page-hero h1 { font-size: clamp(34px, 6vw, 52px); }
+.edge-page-hero > p:last-child { max-width: 580px; font-size: 14px; line-height: 1.6; }
+.edge-day-label { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 15px; color: #abb6ad; font-size: 12px; font-weight: 700; }
+.edge-grid-full { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.edge-empty { margin: 18px 0; padding: 34px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); text-align: center; }
+.edge-empty > span { color: var(--green); font-size: 24px; }
+.edge-empty h2 { margin: 7px 0; font-size: 20px; }
+.edge-empty p { max-width: 510px; margin: auto; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.edge-disclosure { margin: 18px 0 0; color: #768179; font-size: 10px; line-height: 1.6; }
+.matchup-intelligence { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: #141a16; }
+.matchup-intelligence .edge-heading-row h2 { font-size: 24px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.form-card { padding: 15px; border: 1px solid #2b352d; border-radius: 12px; background: #101512; }
+.form-card h3 { margin: 8px 0 4px; font-size: 18px; }
+.form-card > p:not(.edge-category) { margin: 5px 0 0; color: #a0aaa2; font-size: 11px; }
+.form-card > p > span { color: #566259; }
+.form-card .form-streak { color: var(--green) !important; font-weight: 700; }
+.form-card small { display: block; margin-top: 10px; color: #718076; font-size: 9px; }
+.h2h-history { margin-top: 20px; }
+.h2h-history h3 { margin: 0 0 8px; font-size: 14px; }
+.h2h-history ul { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.h2h-history li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.h2h-history li span { color: #859188; font-size: 10px; }
+.h2h-history li strong { font-size: 11px; text-align: right; }
+
 main { color: var(--foreground); }
 main h1, main h2, main h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 main > div > section, main > div > .rounded-xl, main > div > .rounded-2xl { border-color: var(--line); }
@@ -100,13 +147,21 @@ main > div > section, main > div > .rounded-xl, main > div > .rounded-2xl { bord
   .sportsbook-nav { display: none; }
   .sportsbook-account { gap: 10px; }
   .account-name, .sign-out-button { display: none; }
-  .mobile-dock { position: fixed; z-index: 70; inset: auto 0 0; display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px 8px max(8px, env(safe-area-inset-bottom)); background: #101411f5; border-top: 1px solid var(--line); backdrop-filter: blur(18px); }
+  .mobile-dock { position: fixed; z-index: 70; inset: auto 0 0; display: grid; grid-template-columns: repeat(5, 1fr); padding: 7px 8px max(8px, env(safe-area-inset-bottom)); background: #101411f5; border-top: 1px solid var(--line); backdrop-filter: blur(18px); }
   .mobile-dock a { display: grid; justify-items: center; gap: 2px; color: #77837a; text-decoration: none; font-size: 9px; font-weight: 700; }
   .mobile-dock a.is-active { color: var(--green); }
   .dock-glyph { font-size: 19px; line-height: 22px; }
   body { padding-bottom: 61px; }
   main.min-h-screen { min-height: calc(100vh - 125px); }
   .fixed.inset-x-0.bottom-0 { bottom: 61px; }
+  .edge-section { padding: 17px; }
+  .edge-heading-row h2 { font-size: 25px; }
+  .edge-grid, .edge-grid-full { grid-template-columns: 1fr; }
+  .edge-page { padding: 22px 15px 55px; }
+  .edge-page-hero { padding: 27px 0 19px; }
+  .edge-day-label { font-size: 10px; }
+  .matchup-intelligence { padding: 16px; }
+  .form-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
