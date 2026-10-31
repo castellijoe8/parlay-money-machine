@@ -15,6 +15,9 @@ const LINE_COLUMN: Record<Selection["betType"], (game: Record<string, unknown>, 
   Total: (game) => game.total,
   Moneyline: () => null,
 };
+function selectionKey(selection: Selection) {
+  return `${selection.gameId}:${selection.betType}:${selection.pick}:${selection.line ?? "ml"}`;
+}
 
 export async function POST(request: Request) {
   const auth = request.headers.get("authorization") ?? "";
@@ -32,10 +35,11 @@ export async function POST(request: Request) {
   try { body = await request.json() as typeof body; } catch { return NextResponse.json({ error: "Invalid request." }, { status: 400 }); }
   const { stake, selections, idempotencyKey } = body;
   if (!idempotencyKey || !/^[0-9a-f-]{36}$/i.test(idempotencyKey)) return NextResponse.json({ error: "Invalid submission key." }, { status: 400 });
-  if (!Number.isFinite(stake) || Number(stake) <= 0 || Number(stake) > 100000) return NextResponse.json({ error: "Stake must be greater than zero and no more than $100,000." }, { status: 400 });
+  if (stake !== 1) return NextResponse.json({ error: "Parlays use a fixed one-unit stake." }, { status: 400 });
   if (!Array.isArray(selections) || selections.length < 2 || selections.length > 20) return NextResponse.json({ error: "A parlay must contain 2 to 20 selections." }, { status: 400 });
   if (selections.some((item) => !item || typeof item.gameId !== "string" || typeof item.pick !== "string" || !["Spread", "Total", "Moneyline"].includes(item.betType) || !Number.isFinite(item.odds) || item.odds === 0 || (item.betType !== "Moneyline" && !Number.isFinite(item.line)))) return NextResponse.json({ error: "One or more selections are invalid." }, { status: 400 });
-  if (new Set(selections.map((item) => item.gameId)).size !== selections.length) return NextResponse.json({ error: "Only one selection per game is supported." }, { status: 400 });
+  const selectionKeys = selections.map(selectionKey);
+  if (new Set(selectionKeys).size !== selections.length) return NextResponse.json({ error: "Duplicate selections are not allowed." }, { status: 400 });
 
   try {
     const { data: games, error } = await client.from("games").select("id, sport, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home").in("id", selections.map((item) => item.gameId));
@@ -50,12 +54,12 @@ export async function POST(request: Request) {
       if (!validPick) return NextResponse.json({ error: "A selection does not match its game." }, { status: 400 });
       const price = PRICE_COLUMN[selection.betType](game, selection);
       const line = LINE_COLUMN[selection.betType](game, selection);
-      currentSelections[selection.gameId] = {
+      currentSelections[selectionKey(selection)] = {
         odds: Number.isInteger(price) && price !== 0 ? price as number : null,
         line: selection.betType === "Moneyline" ? null : typeof line === "number" ? line : null,
       };
     }
-    if (selections.some((selection) => currentSelections[selection.gameId].odds === null || currentSelections[selection.gameId].odds !== selection.odds || currentSelections[selection.gameId].line !== selection.line)) return NextResponse.json({ error: "Prices changed. Review and accept the updated odds and lines before submitting.", currentSelections }, { status: 409 });
+    if (selections.some((selection) => currentSelections[selectionKey(selection)].odds === null || currentSelections[selectionKey(selection)].odds !== selection.odds || currentSelections[selectionKey(selection)].line !== selection.line)) return NextResponse.json({ error: "Prices changed. Review and accept the updated odds and lines before submitting.", currentSelections }, { status: 409 });
 
     const odds = calculateParlayOdds(selections.map((item) => item.odds));
     const payout = calculatePayout(Number(stake), odds.decimalOdds);
@@ -77,7 +81,7 @@ export async function POST(request: Request) {
           if (!game) continue;
           const price = PRICE_COLUMN[selection.betType](game, selection);
           const line = LINE_COLUMN[selection.betType](game, selection);
-          latest[selection.gameId] = { odds: Number.isInteger(price) && price !== 0 ? price as number : null, line: selection.betType === "Moneyline" ? null : typeof line === "number" ? line : null };
+          latest[selectionKey(selection)] = { odds: Number.isInteger(price) && price !== 0 ? price as number : null, line: selection.betType === "Moneyline" ? null : typeof line === "number" ? line : null };
         }
         return NextResponse.json({ error: "Prices changed before the wager was saved. Review the latest odds and lines, then submit again.", currentSelections: latest }, { status: 409 });
       }

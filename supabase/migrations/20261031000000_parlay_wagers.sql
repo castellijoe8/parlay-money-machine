@@ -4,8 +4,9 @@ create table if not exists public.parlay_wagers (
   user_id uuid not null references auth.users(id) on delete cascade,
   idempotency_key uuid not null,
   share_token uuid unique,
+  same_game_price_estimate boolean not null default false,
   user_name text not null default 'Player',
-  stake numeric(12,2) not null check (stake > 0),
+  stake numeric(12,2) not null default 1 check (stake = 1),
   combined_american_odds bigint not null,
   combined_decimal_odds numeric(24,10) not null check (combined_decimal_odds > 1),
   potential_return numeric(14,2) not null,
@@ -28,12 +29,13 @@ create table if not exists public.parlay_legs (
   american_odds integer not null check (american_odds <> 0),
   decimal_odds numeric(18,10) not null check (decimal_odds > 1),
   result text not null default 'pending' check (result in ('pending','won','lost','push','void')),
-  settled_at timestamptz,
-  unique (parlay_id, game_id)
+  settled_at timestamptz
 );
 
 create index if not exists parlay_wagers_user_created_idx on public.parlay_wagers(user_id, created_at desc);
 create index if not exists parlay_legs_game_result_idx on public.parlay_legs(game_id, result);
+create unique index if not exists parlay_legs_unique_selection_idx
+  on public.parlay_legs(parlay_id, game_id, market, selection, (coalesce(line, 0)));
 
 alter table public.parlay_wagers enable row level security;
 alter table public.parlay_legs enable row level security;
@@ -71,7 +73,7 @@ declare
 begin
   select id into wager_id from public.parlay_wagers where user_id=p_user_id and idempotency_key=p_idempotency_key;
   if found then return wager_id; end if;
-  if p_stake <= 0 or p_stake > 100000 or jsonb_typeof(p_legs) <> 'array' or jsonb_array_length(p_legs) < 2 or jsonb_array_length(p_legs) > 20 then
+  if p_stake <> 1 or jsonb_typeof(p_legs) <> 'array' or jsonb_array_length(p_legs) < 2 or jsonb_array_length(p_legs) > 20 then
     raise exception 'invalid_parlay';
   end if;
   for item in select value from jsonb_array_elements(p_legs) loop
@@ -99,13 +101,15 @@ begin
     leg_decimal := case when expected_price > 0 then 1 + expected_price::numeric / 100 else 1 + 100::numeric / abs(expected_price) end;
     combined_decimal := combined_decimal * leg_decimal;
   end loop;
-  if leg_count <> (select count(distinct value->>'gameId') from jsonb_array_elements(p_legs)) then raise exception 'duplicate_game'; end if;
+  if leg_count <> (select count(*) from (select distinct value->>'gameId', value->>'betType', value->>'pick', coalesce(value->>'line','ml') from jsonb_array_elements(p_legs)) unique_selections) then raise exception 'duplicate_selection'; end if;
   if abs(combined_decimal - p_combined_decimal_odds) > 0.00000001 then raise exception 'price_changed'; end if;
   expected_american := case when combined_decimal >= 2 then round((combined_decimal - 1) * 100)::integer else round(-100 / (combined_decimal - 1))::integer end;
   if expected_american <> p_combined_american_odds then raise exception 'price_changed'; end if;
 
-  insert into public.parlay_wagers(user_id,user_name,idempotency_key,stake,combined_american_odds,combined_decimal_odds,potential_return,potential_profit)
-  values (p_user_id,coalesce(nullif(trim(p_user_name),''),'Player'),p_idempotency_key,p_stake,p_combined_american_odds,combined_decimal,round(p_stake*combined_decimal,2),round(p_stake*(combined_decimal-1),2)) on conflict (user_id,idempotency_key) do nothing returning id into wager_id;
+  insert into public.parlay_wagers(user_id,user_name,idempotency_key,same_game_price_estimate,stake,combined_american_odds,combined_decimal_odds,potential_return,potential_profit)
+  values (p_user_id,coalesce(nullif(trim(p_user_name),''),'Player'),p_idempotency_key,
+    leg_count > (select count(distinct value->>'gameId') from jsonb_array_elements(p_legs)),
+    p_stake,p_combined_american_odds,combined_decimal,round(p_stake*combined_decimal,2),round(p_stake*(combined_decimal-1),2)) on conflict (user_id,idempotency_key) do nothing returning id into wager_id;
   if wager_id is null then select id into wager_id from public.parlay_wagers where user_id=p_user_id and idempotency_key=p_idempotency_key; return wager_id; end if;
   for item in select value from jsonb_array_elements(p_legs) loop
     expected_price := (item->>'odds')::integer;
