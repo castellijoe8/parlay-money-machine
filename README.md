@@ -1,3 +1,7 @@
+For the parlay feature, tested behavior, and exact database rollout steps, see [docs/parlay-rollout.md](docs/parlay-rollout.md).
+
+For this app's Supabase, API credentials, authentication, and Vercel setup, see [SETUP.md](SETUP.md).
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

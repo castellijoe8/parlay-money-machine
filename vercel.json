@@ -19,6 +19,10 @@
     {
       "path": "/api/sync-scores",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/daily-edge/refresh",
+      "schedule": "0 17 * * *"
     }
   ]
 }

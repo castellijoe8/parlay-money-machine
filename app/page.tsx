@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { DailyEdgePreview } from "@/app/daily-edge-feed";
+import { compatibilityError, priceParlay, selectionKey, isSelection, UUID, type Selection } from "@/lib/betting";
+import { placeSingle } from "@/lib/wager-request";
 
 type Sport = "ncaaf" | "nfl";
 
@@ -65,6 +68,14 @@ type BetOption = {
 };
 
 const SCROLL_KEY = "parlay-money-machine-home-scroll";
+const PARLAY_KEY = "parlay-money-machine-selections-v1";
+const PARLAY_REQUEST_KEY = "parlay-money-machine-request-id-v1";
+
+function toSelection(option: BetOption): Selection {
+  return { gameId: option.game.id, sport: option.game.sport as Sport, pick: option.pick,
+    betType: option.betType, line: option.line, odds: option.odds ?? 0 };
+}
+function betOptionKey(option: BetOption) { return selectionKey(toSelection(option)); }
 
 /*
 |--------------------------------------------------------------------------
@@ -493,8 +504,9 @@ export default function HomePage() {
   const router = useRouter();
   const [games, setGames] = useState<Game[]>([]);
   const [userPicks, setUserPicks] = useState<
-    Record<string, UserPick>
+    Record<string, UserPick[]>
   >({});
+  const [recordResults, setRecordResults] = useState<Array<{ result: string | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -517,6 +529,40 @@ export default function HomePage() {
 
   const [wagerMessage, setWagerMessage] =
     useState("");
+  const submissionLock = useRef(false);
+  const singleRequestId = useRef<string | null>(null);
+  const [parlayMode, setParlayMode] = useState(false);
+  const [parlaySelections, setParlaySelections] = useState<BetOption[]>([]);
+  const [parlayRequestId, setParlayRequestId] = useState<string | null>(null);
+  const [parlayHydrated, setParlayHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PARLAY_KEY);
+      // Browser storage is restored after hydration to avoid server/client markup mismatch.
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (!Array.isArray(parsed) || parsed.length > 20 || !parsed.every((option) => {
+          try { return option?.game && isSelection(toSelection(option)); } catch { return false; }
+        })) throw new Error("Invalid saved slip");
+        // Restore persisted browser state after hydration.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setParlaySelections(parsed as BetOption[]);
+        const savedId = localStorage.getItem(PARLAY_REQUEST_KEY);
+        if (savedId && UUID.test(savedId)) setParlayRequestId(savedId);
+      }
+    } catch { localStorage.removeItem(PARLAY_KEY); }
+    // Hydrate browser-persisted bet slip state after initial server render.
+    setParlayHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (parlayHydrated) {
+      localStorage.setItem(PARLAY_KEY, JSON.stringify(parlaySelections));
+      if (parlayRequestId) localStorage.setItem(PARLAY_REQUEST_KEY, parlayRequestId);
+      else localStorage.removeItem(PARLAY_REQUEST_KEY);
+    }
+  }, [parlayHydrated, parlaySelections, parlayRequestId]);
 
   useEffect(() => {
     loadGames();
@@ -587,7 +633,10 @@ export default function HomePage() {
         );
 
         if (game.status === "live") {
-          return true;
+          const liveCutoff = new Date(
+            now.getTime() - 6 * 60 * 60 * 1000
+          );
+          return startTime >= liveCutoff;
         }
 
         return startTime >= now;
@@ -624,33 +673,18 @@ export default function HomePage() {
 
     const pickMap: Record<
       string,
-      UserPick
+      UserPick[]
     > = {};
 
     (data ?? []).forEach((pick) => {
       if (!pick.game_id) return;
 
-      pickMap[pick.game_id] = pick;
+      (pickMap[pick.game_id] ??= []).push(pick);
     });
 
     setUserPicks(pickMap);
-  }
-
-  function saveScrollPosition() {
-    sessionStorage.setItem(
-      SCROLL_KEY,
-      String(window.scrollY)
-    );
-  }
-
-  function formatDate(date: string) {
-    return new Date(date).toLocaleString([], {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
+    const { data: records } = await supabase.from("wager_records").select("result").eq("user_id", user.id);
+    setRecordResults(records ?? []);
   }
 
   function formatShortDate(date: string) {
@@ -810,13 +844,7 @@ export default function HomePage() {
   }
 
   function selectBet(option: BetOption) {
-    const existingPick =
-      userPicks[option.game.id];
-
-    if (existingPick) {
-      return;
-    }
-
+    if (submissionLock.current) return;
     if (
       isLive(option.game) ||
       isGameStarted(option.game)
@@ -828,7 +856,29 @@ export default function HomePage() {
       return;
     }
 
+    if (option.odds === null || option.odds === 0 || (option.betType !== "Moneyline" && option.line === null)) {
+      setWagerMessage("This market is unavailable."); return;
+    }
+    if (parlayMode) {
+      const conflict = compatibilityError([...parlaySelections, option].map(toSelection));
+      if (conflict) { setWagerMessage(conflict); return; }
+      if (option.odds === null || option.odds === 0 || option.line === undefined) {
+        setWagerMessage("This selection does not have a valid price.");
+        return;
+      }
+      if (parlaySelections.some((leg) => betOptionKey(leg) === betOptionKey(option))) {
+        setWagerMessage("That exact selection is already in your parlay.");
+        return;
+      }
+      setParlaySelections((legs) => [...legs, option]);
+      setParlayRequestId(null);
+      setWagerMessage("");
+      setSelectedBet(null);
+      return;
+    }
+
     setWagerMessage("");
+    singleRequestId.current = crypto.randomUUID();
     setSelectedBet(option);
   }
 
@@ -838,155 +888,73 @@ export default function HomePage() {
     betType: string
   ) {
     return (
-      selectedBet?.game.id === gameId &&
-      selectedBet.pick === pick &&
-      selectedBet.betType === betType
+      (selectedBet?.game.id === gameId && selectedBet.pick === pick && selectedBet.betType === betType) ||
+      parlaySelections.some((leg) => leg.game.id === gameId && leg.pick === pick && leg.betType === betType)
     );
   }
 
-  async function placeWager() {
-    if (
-      !selectedBet ||
-      placingWager
-    ) {
-      return;
-    }
+  async function refreshSlipPrices() {
+    if (submissionLock.current) return;
+    submissionLock.current = true; setPlacingWager(true);
+    try {
+      const { data, error } = await supabase.from("games").select("*").in("id", parlaySelections.map((leg) => leg.game.id));
+      if (error) throw new Error("Could not refresh odds. Your slip has been preserved.");
+      const refreshed = new Map((data ?? []).map((game) => [game.id, game as Game]));
+      setParlaySelections((legs) => legs.flatMap((leg) => {
+        const game = refreshed.get(leg.game.id);
+        if (!game || game.status !== "scheduled" || Date.parse(game.starts_at) <= Date.now()) return [];
+        const home = leg.pick === game.home_team;
+        const line = leg.betType === "Moneyline" ? null : leg.betType === "Total" ? game.total : home ? game.spread_home : game.spread;
+        const odds = leg.betType === "Moneyline" ? home ? game.moneyline_home : game.moneyline_away
+          : leg.betType === "Total" ? leg.pick === "Over" ? game.total_odds_over : game.total_odds_under : home ? game.spread_odds_home : game.spread_odds_away;
+        return [{ ...leg, game, line, odds }];
+      }));
+      setParlayRequestId(null); setWagerMessage("Prices refreshed; closed games were removed. Review the slip before submitting.");
+      await loadGames();
+    } catch (error) { setWagerMessage(error instanceof Error ? error.message : "Could not refresh odds."); }
+    finally { submissionLock.current = false; setPlacingWager(false); }
+  }
 
+  async function submitParlay() {
+    if (submissionLock.current || parlaySelections.length < 2) return;
+    try { priceParlay(parlaySelections.map(toSelection)); }
+    catch (error) { setWagerMessage(error instanceof Error ? error.message : "Invalid parlay."); return; }
+    submissionLock.current = true;
     setPlacingWager(true);
     setWagerMessage("");
-
     try {
-      const {
-        data: { user },
-      } =
-        await supabase.auth.getUser();
-
-      if (!user) {
-        setWagerMessage(
-          "Please log in to place a wager."
-        );
-        setPlacingWager(false);
-        return;
-      }
-
-      if (
-        isGameStarted(
-          selectedBet.game
-        )
-      ) {
-        setWagerMessage(
-          "Wagering is closed: this game has already started."
-        );
-        setPlacingWager(false);
-        setSelectedBet(null);
-        return;
-      }
-
-      const {
-        data: profile,
-        error: profileError,
-      } = await supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error(
-          "Profile error:",
-          profileError
-        );
-
-        setWagerMessage(
-          "Could not load your profile. Please try again."
-        );
-
-        setPlacingWager(false);
-        return;
-      }
-
-      const { error } =
-        await supabase
-          .from("picks")
-          .insert({
-            game_id:
-              selectedBet.game.id,
-            user_id: user.id,
-            user_name:
-              profile?.display_name?.trim() ||
-              "Player",
-            pick: selectedBet.pick,
-            bet_type:
-              selectedBet.betType,
-            line: selectedBet.line,
-            odds: selectedBet.odds,
-            result: "pending",
-            units: 1,
-          });
-
-      if (error) {
-        console.error(
-          "Place wager error:",
-          error
-        );
-
-        const errorMessage =
-          String(
-            error.message ?? ""
-          ).toLowerCase();
-
-        if (
-          errorMessage.includes(
-            "wagering is closed"
-          ) ||
-          errorMessage.includes(
-            "already started"
-          )
-        ) {
-          setWagerMessage(
-            "Wagering is closed: this game has already started."
-          );
-        } else if (
-          errorMessage.includes(
-            "duplicate"
-          ) ||
-          errorMessage.includes(
-            "unique"
-          )
-        ) {
-          setWagerMessage(
-            "You already have a wager on this game."
-          );
-        } else {
-          setWagerMessage(
-            "Could not place wager. Please try again."
-          );
-        }
-
-        setPlacingWager(false);
-        return;
-      }
-
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Please log in to place a parlay.");
+      const requestId = parlayRequestId ?? crypto.randomUUID();
+      setParlayRequestId(requestId);
+      localStorage.setItem(PARLAY_REQUEST_KEY, requestId);
+      const response = await fetch("/api/parlays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ idempotencyKey: requestId, selections: parlaySelections.map(toSelection) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to submit parlay.");
+      setParlaySelections([]); setParlayRequestId(null); setParlayMode(false);
       await loadUserPicks();
-
-      setSelectedBet(null);
-      setWagerMessage("");
-
-      saveScrollPosition();
-
-      router.push("/wagers");
+      setWagerMessage("Parlay placed. You can add more selections or view My Wagers.");
     } catch (error) {
-      console.error(
-        "Unexpected wager error:",
-        error
-      );
+      setWagerMessage(error instanceof Error ? error.message : "Unable to submit parlay.");
+    } finally { submissionLock.current = false; setPlacingWager(false); }
+  }
 
-      setWagerMessage(
-        "Something went wrong. Please try again."
-      );
-
-      setPlacingWager(false);
-    }
+  async function placeWager() {
+    if (!selectedBet || submissionLock.current) return;
+    submissionLock.current = true; setPlacingWager(true); setWagerMessage("");
+    try {
+      singleRequestId.current ??= crypto.randomUUID();
+      await placeSingle(toSelection(selectedBet), singleRequestId.current);
+      await loadUserPicks();
+      setSelectedBet(null); singleRequestId.current = null;
+      setWagerMessage("Wager placed. Select another market below or view My Wagers.");
+    } catch (error) {
+      setWagerMessage(error instanceof Error ? error.message : "Could not place wager.");
+    } finally { submissionLock.current = false; setPlacingWager(false); }
   }
 
   /*
@@ -1135,21 +1103,7 @@ export default function HomePage() {
       >
     );
 
-  const pendingPickCount =
-    Object.values(
-      userPicks
-    ).filter((pick) => {
-      const result = String(
-        pick.result ?? ""
-      )
-        .trim()
-        .toLowerCase();
-
-      return (
-        !result ||
-        result === "pending"
-      );
-    }).length;
+  const pendingPickCount = recordResults.filter((record) => !record.result || record.result === "pending").length;
 
   const gamesWithPicks =
     games.filter(
@@ -1171,15 +1125,7 @@ export default function HomePage() {
     const live = isLive(game);
     const started =
       isGameStarted(game);
-    const existingPick =
-      userPicks[game.id];
-
-    const pickStatus =
-      existingPick
-        ? getPickStatus(
-            existingPick
-          )
-        : null;
+    const existingPicks = userPicks[game.id] ?? [];
 
     const wageringClosed =
       live || started;
@@ -1237,397 +1183,34 @@ export default function HomePage() {
             ) : null}
           </div>
 
-          {/* Existing Pick */}
-          {existingPick ? (
-            <div
-              className={`mt-3 rounded-xl border px-3 py-2.5 ${pickStatus?.className}`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[9px] font-extrabold uppercase tracking-wide sm:text-[10px]">
-                      Your Pick
-                    </p>
-
-                    <span className="text-[9px] font-bold opacity-50 sm:text-[10px]">
-                      ·
-                    </span>
-
-                    <span className="text-[9px] font-extrabold uppercase tracking-wide sm:text-[10px]">
-                      {
-                        pickStatus?.label
-                      }
-                    </span>
-                  </div>
-
-                  <p className="mt-0.5 truncate text-sm font-extrabold text-gray-900 sm:text-base">
-                    {formatUserPick(
-                      existingPick
-                    )}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => {
-                    saveScrollPosition();
-                    router.push(`/wager/${game.id}`);
-                  }}
-                  className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-white transition hover:bg-gray-700 sm:px-3.5 sm:text-xs"
-                >
-                  View Bet
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Betting Markets */}
+          {existingPicks.length > 0 && <div className="mt-3 rounded-xl border border-green-100 bg-green-50 px-3 py-2">
+            <p className="text-[10px] font-extrabold uppercase text-green-800">Your wagers · {existingPicks.length}</p>
+            {existingPicks.map((pick, index) => <p key={index} className="mt-1 text-xs font-semibold text-gray-700">{formatUserPick(pick)} · {getPickStatus(pick).label}</p>)}
+            <button onClick={() => router.push("/wagers")} className="mt-2 text-xs font-bold text-green-800 underline">View wagers</button>
+          </div>}
           <div className="mt-3 grid grid-cols-3 gap-1.5 sm:mt-4 sm:gap-2">
-            {/* Spread */}
-            <div className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">
-                Spread
-              </p>
-
-              <div className="mt-2 space-y-1.5">
-                <button
-                  disabled={
-                    wageringClosed ||
-                    Boolean(
-                      existingPick
-                    )
-                  }
-                  onClick={() =>
-                    selectBet({
-                      game,
-                      pick: game.away_team,
-                      betType:
-                        "Spread",
-                      line:
-                        game.spread,
-                      odds:
-                        game.spread_odds_away,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between gap-1 rounded-lg px-1.5 py-1 text-left transition ${
-                    isSelected(
-                      game.id,
-                      game.away_team,
-                      "Spread"
-                    )
-                      ? "bg-green-100 ring-1 ring-green-300"
-                      : "hover:bg-gray-100"
-                  } ${
-                    wageringClosed ||
-                    existingPick
-                      ? "cursor-default opacity-60"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
-                    {
-                      game.away_team
-                    }
-                  </span>
-
-                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
-                    {formatLine(
-                      game.spread
-                    )}{" "}
-                    <span className="font-medium text-gray-500">
-                      {formatOdds(
-                        game.spread_odds_away
-                      )}
-                    </span>
-                  </span>
-                </button>
-
-                <button
-                  disabled={
-                    wageringClosed ||
-                    Boolean(
-                      existingPick
-                    )
-                  }
-                  onClick={() =>
-                    selectBet({
-                      game,
-                      pick: game.home_team,
-                      betType:
-                        "Spread",
-                      line:
-                        game.spread_home,
-                      odds:
-                        game.spread_odds_home,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between gap-1 rounded-lg px-1.5 py-1 text-left transition ${
-                    isSelected(
-                      game.id,
-                      game.home_team,
-                      "Spread"
-                    )
-                      ? "bg-green-100 ring-1 ring-green-300"
-                      : "hover:bg-gray-100"
-                  } ${
-                    wageringClosed ||
-                    existingPick
-                      ? "cursor-default opacity-60"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
-                    {
-                      game.home_team
-                    }
-                  </span>
-
-                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
-                    {formatLine(
-                      game.spread_home
-                    )}{" "}
-                    <span className="font-medium text-gray-500">
-                      {formatOdds(
-                        game.spread_odds_home
-                      )}
-                    </span>
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {/* Total */}
-            <div className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">
-                Total
-              </p>
-
-              <div className="mt-2 space-y-1.5">
-                <button
-                  disabled={
-                    wageringClosed ||
-                    Boolean(
-                      existingPick
-                    )
-                  }
-                  onClick={() =>
-                    selectBet({
-                      game,
-                      pick: "Over",
-                      betType:
-                        "Total",
-                      line:
-                        game.total,
-                      odds:
-                        game.total_odds_over,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between gap-1 rounded-lg px-1.5 py-1 text-left transition ${
-                    isSelected(
-                      game.id,
-                      "Over",
-                      "Total"
-                    )
-                      ? "bg-green-100 ring-1 ring-green-300"
-                      : "hover:bg-gray-100"
-                  } ${
-                    wageringClosed ||
-                    existingPick
-                      ? "cursor-default opacity-60"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  <span className="text-[10px] font-medium text-gray-600 sm:text-xs">
-                    Over
-                  </span>
-
-                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
-                    {game.total ??
-                      "—"}{" "}
-                    <span className="font-medium text-gray-500">
-                      {formatOdds(
-                        game.total_odds_over
-                      )}
-                    </span>
-                  </span>
-                </button>
-
-                <button
-                  disabled={
-                    wageringClosed ||
-                    Boolean(
-                      existingPick
-                    )
-                  }
-                  onClick={() =>
-                    selectBet({
-                      game,
-                      pick: "Under",
-                      betType:
-                        "Total",
-                      line:
-                        game.total,
-                      odds:
-                        game.total_odds_under,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between gap-1 rounded-lg px-1.5 py-1 text-left transition ${
-                    isSelected(
-                      game.id,
-                      "Under",
-                      "Total"
-                    )
-                      ? "bg-green-100 ring-1 ring-green-300"
-                      : "hover:bg-gray-100"
-                  } ${
-                    wageringClosed ||
-                    existingPick
-                      ? "cursor-default opacity-60"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  <span className="text-[10px] font-medium text-gray-600 sm:text-xs">
-                    Under
-                  </span>
-
-                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
-                    {game.total ??
-                      "—"}{" "}
-                    <span className="font-medium text-gray-500">
-                      {formatOdds(
-                        game.total_odds_under
-                      )}
-                    </span>
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {/* Moneyline */}
-            <div className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">
-                Moneyline
-              </p>
-
-              <div className="mt-2 space-y-1.5">
-                <button
-                  disabled={
-                    wageringClosed ||
-                    Boolean(
-                      existingPick
-                    )
-                  }
-                  onClick={() =>
-                    selectBet({
-                      game,
-                      pick: game.away_team,
-                      betType:
-                        "Moneyline",
-                      line: null,
-                      odds:
-                        game.moneyline_away,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between gap-1 rounded-lg px-1.5 py-1 text-left transition ${
-                    isSelected(
-                      game.id,
-                      game.away_team,
-                      "Moneyline"
-                    )
-                      ? "bg-green-100 ring-1 ring-green-300"
-                      : "hover:bg-gray-100"
-                  } ${
-                    wageringClosed ||
-                    existingPick
-                      ? "cursor-default opacity-60"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
-                    {
-                      game.away_team
-                    }
-                  </span>
-
-                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
-                    {formatOdds(
-                      game.moneyline_away
-                    )}
-                  </span>
-                </button>
-
-                <button
-                  disabled={
-                    wageringClosed ||
-                    Boolean(
-                      existingPick
-                    )
-                  }
-                  onClick={() =>
-                    selectBet({
-                      game,
-                      pick: game.home_team,
-                      betType:
-                        "Moneyline",
-                      line: null,
-                      odds:
-                        game.moneyline_home,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between gap-1 rounded-lg px-1.5 py-1 text-left transition ${
-                    isSelected(
-                      game.id,
-                      game.home_team,
-                      "Moneyline"
-                    )
-                      ? "bg-green-100 ring-1 ring-green-300"
-                      : "hover:bg-gray-100"
-                  } ${
-                    wageringClosed ||
-                    existingPick
-                      ? "cursor-default opacity-60"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  <span className="truncate text-[10px] font-medium text-gray-600 sm:text-xs">
-                    {
-                      game.home_team
-                    }
-                  </span>
-
-                  <span className="shrink-0 text-[10px] font-bold text-gray-900 sm:text-xs">
-                    {formatOdds(
-                      game.moneyline_home
-                    )}
-                  </span>
-                </button>
-              </div>
-            </div>
+            {(["Spread", "Total", "Moneyline"] as const).map((market) => {
+              const options: BetOption[] = market === "Total"
+                ? [{ game, pick: "Over", betType: market, line: game.total, odds: game.total_odds_over }, { game, pick: "Under", betType: market, line: game.total, odds: game.total_odds_under }]
+                : [{ game, pick: game.away_team, betType: market, line: market === "Spread" ? game.spread : null, odds: market === "Spread" ? game.spread_odds_away : game.moneyline_away },
+                   { game, pick: game.home_team, betType: market, line: market === "Spread" ? game.spread_home : null, odds: market === "Spread" ? game.spread_odds_home : game.moneyline_home }];
+              return <div key={market} className="rounded-xl bg-gray-50 p-2.5 sm:p-3">
+                <p className="text-[9px] font-extrabold uppercase tracking-wide text-gray-400 sm:text-[10px]">{market}</p>
+                <div className="mt-2 space-y-1.5">{options.map((option) => {
+                  const placed = existingPicks.filter((pick) => pick.pick === option.pick && pick.bet_type?.toLowerCase() === market.toLowerCase() && pick.line === option.line).length;
+                  const unavailable = option.odds === null || option.odds === 0 || (market !== "Moneyline" && option.line === null);
+                  return <button key={betOptionKey(option)} type="button" disabled={wageringClosed || unavailable || placingWager}
+                    aria-pressed={isSelected(game.id, option.pick, market)} onClick={() => selectBet(option)}
+                    className={`w-full rounded-lg px-1.5 py-2 text-left transition disabled:cursor-default disabled:opacity-50 ${isSelected(game.id, option.pick, market) ? "bg-green-100 ring-1 ring-green-300" : "hover:bg-gray-100"}`}>
+                    <span className="block truncate text-[10px] font-medium text-gray-600 sm:text-xs">{option.pick}</span>
+                    <span className="text-[10px] font-bold text-gray-900 sm:text-xs">{market === "Moneyline" ? "" : `${formatLine(option.line)} `}{formatOdds(option.odds)}</span>
+                    {placed > 0 && <span className="mt-0.5 block text-[9px] font-bold text-green-700">Placed · {placed}</span>}
+                  </button>;
+                })}</div>
+              </div>;
+            })}
           </div>
-
-          {/* Main CTA */}
-          {!existingPick ? (
-            <button
-              onClick={() => {
-                saveScrollPosition();
-                router.push(`/wager/${game.id}`);
-              }}
-              className="mt-3 w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-gray-700 active:scale-[0.99] sm:mt-4"
-            >
-              Bet This Game →
-            </button>
-          ) : (
-            <div className="mt-2 flex items-center justify-between px-1 text-[10px] font-semibold text-gray-400 sm:text-xs">
-              <span>
-                1 Unit Risked
-              </span>
-
-              <span>
-                {formatDate(
-                  game.starts_at
-                )}
-              </span>
-            </div>
-          )}
+          <p className="mt-3 text-[10px] font-semibold text-gray-500">{wageringClosed ? "Wagering closed" : "Select any available market to add another wager. Each single risks 1 unit."}</p>
         </div>
       </div>
     );
@@ -1661,9 +1244,7 @@ export default function HomePage() {
   return (
     <main
       className={`min-h-screen bg-gray-50 px-3 py-4 sm:px-6 sm:py-8 ${
-        selectedBet
-          ? "pb-40 sm:pb-44"
-          : ""
+        parlayMode ? "pb-[80vh]" : selectedBet ? "pb-40 sm:pb-44" : ""
       }`}
     >
       <div className="mx-auto max-w-5xl">
@@ -1683,6 +1264,9 @@ export default function HomePage() {
               <p className="mt-1 text-xs text-gray-500 sm:text-sm">
                 1 unit. One game. No excuses.
               </p>
+              <button type="button" disabled={placingWager} onClick={() => { if (!parlayMode && selectedBet && !parlaySelections.some((leg) => betOptionKey(leg) === betOptionKey(selectedBet))) { const conflict = compatibilityError([...parlaySelections, selectedBet].map(toSelection)); if (conflict) { setWagerMessage(conflict); return; } setParlaySelections((legs) => [...legs, selectedBet]); setParlayRequestId(null); } setParlayMode((mode) => !mode); setWagerMessage(""); }} className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-xs font-extrabold text-white hover:bg-green-800">
+                {parlayMode ? `Parlay Builder · ${parlaySelections.length} legs (on)` : `Build a Parlay${parlaySelections.length ? ` · ${parlaySelections.length}` : ""}`}
+              </button>
             </div>
 
             <div className="hidden shrink-0 text-right sm:block">
@@ -1752,6 +1336,8 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        <DailyEdgePreview />
 
         {/* Games */}
         <section className="mt-5 sm:mt-7">
@@ -2003,8 +1589,11 @@ export default function HomePage() {
         </section>
       </div>
 
+      {wagerMessage && !selectedBet && !parlayMode && <div role="status" className="fixed bottom-4 left-4 right-4 z-50 rounded-xl border border-green-200 bg-white p-4 text-sm font-semibold text-gray-800 shadow-lg">{wagerMessage}<button className="float-right ml-3" aria-label="Dismiss message" onClick={() => setWagerMessage("")}>×</button></div>}
       {/* Sticky Bet Slip */}
-      {selectedBet ? (
+      {parlayMode ? (
+        <ParlaySlip refresh={refreshSlipPrices} selections={parlaySelections} remove={(key) => { setParlaySelections((legs) => legs.filter((leg) => betOptionKey(leg) !== key)); setParlayRequestId(null); }} clear={() => { setParlaySelections([]); setParlayRequestId(null); }} exit={() => { setParlayMode(false); setWagerMessage(""); }} submit={submitParlay} submitting={placingWager} message={wagerMessage} />
+      ) : selectedBet ? (
         <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 shadow-2xl backdrop-blur">
           <div className="mx-auto max-w-5xl px-3 py-3 sm:px-6 sm:py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
@@ -2108,4 +1697,34 @@ export default function HomePage() {
       ) : null}
     </main>
   );
+}
+
+function ParlaySlip({ selections, remove, clear, exit, submit, submitting, message, refresh }: {
+  selections: BetOption[];
+  refresh: () => void;
+  remove: (key: string) => void; clear: () => void; exit: () => void;
+  submit: () => void; submitting: boolean; message: string;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  let quote: ReturnType<typeof priceParlay> | null = null;
+  let pricingError = "";
+  if (selections.length >= 2) {
+    try { quote = priceParlay(selections.map(toSelection)); }
+    catch (error) { pricingError = error instanceof Error ? error.message : "Pricing is unavailable."; }
+  }
+  const groups = new Map<string, BetOption[]>();
+  for (const leg of selections) groups.set(leg.game.id, [...(groups.get(leg.game.id) ?? []), leg]);
+  return <div className="fixed inset-x-0 bottom-0 z-50 max-h-[78vh] overflow-y-auto border-t border-gray-200 bg-white/98 shadow-2xl backdrop-blur"><div className="mx-auto max-w-5xl px-3 py-3 sm:px-6 sm:py-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-extrabold text-gray-900">Parlay Builder · {selections.length} selections</p><p className="text-xs text-gray-500">NFL and college football · fixed 1-unit stake</p></div><div className="flex gap-2"><button onClick={refresh} disabled={submitting || !selections.length} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40">Refresh odds</button><button onClick={clear} disabled={submitting || !selections.length} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40">Clear all</button><button disabled={submitting} onClick={exit} className="rounded-lg px-3 py-2 text-xs font-bold text-gray-600">Single wager mode</button></div></div>
+    <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="mt-2 rounded-lg border px-3 py-2 text-xs font-bold text-green-800">{expanded ? "Minimize slip" : `Expand slip · ${selections.length} selections`}</button>
+    <div hidden={!expanded}>
+    {[...groups].map(([gameId, legs]) => <section key={gameId} className="mt-3 rounded-xl bg-gray-50 p-2.5"><p className="text-[10px] font-bold text-gray-500">{legs[0].game.sport?.toUpperCase()} · {legs[0].game.away_team} vs. {legs[0].game.home_team}</p>{legs.map((leg) => <div key={betOptionKey(leg)} className="mt-1 flex items-center justify-between gap-2"><p className="text-xs font-bold text-gray-900">{leg.pick} · {leg.betType} {leg.betType === "Moneyline" ? "" : leg.line} · {leg.odds && leg.odds > 0 ? "+" : ""}{leg.odds ?? "—"}</p><button disabled={submitting} aria-label={`Remove ${leg.pick} ${leg.betType}`} onClick={() => remove(betOptionKey(leg))} className="px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>)}</section>)}
+    {!selections.length && <p className="py-3 text-sm text-gray-500">Choose at least two selections from the game cards. Your slip stays saved while you browse.</p>}
+    {pricingError && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs font-semibold text-amber-900">{pricingError}</p>}
+    <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-900 p-3 text-xs text-white sm:grid-cols-4"><div>Combined odds<p className="mt-1 font-extrabold">{quote ? `${quote.americanOdds > 0 ? "+" : ""}${quote.americanOdds}` : "Unavailable"}</p></div><div>Stake<p className="mt-1 font-extrabold">1.00 unit</p></div><div>Potential profit<p className="mt-1 font-extrabold">{quote ? `${quote.profit.toFixed(2)} units` : "—"}</p></div><div>Total return<p className="mt-1 font-extrabold">{quote ? `${quote.totalReturn.toFixed(2)} units` : "—"}</p></div></div>
+    <p className="mt-2 text-[10px] text-gray-500">{quote ? "Pricing: standard multiplication across independent games. Final odds are validated when placed." : "No same-game price is estimated or invented."} Social units only; no money is collected or paid.</p>
+    <button disabled={submitting || !quote} onClick={submit} className="mt-3 w-full rounded-lg bg-green-600 px-4 py-3 text-xs font-extrabold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Place Parlay · 1 Unit"}</button>
+    {message && <p role="status" className="mt-2 text-xs font-semibold text-red-600">{message}</p>}
+    </div>
+  </div></div>;
 }

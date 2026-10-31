@@ -2,56 +2,51 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+
+const navigation = [
+  { href: "/", label: "Home" },
+  { href: "/daily-edge", label: "Daily Edge" },
+  { href: "/wagers", label: "My Bets" },
+  { href: "/friends", label: "Friends" },
+  { href: "/leaderboard", label: "Leaderboard" },
+];
 
 export default function Header() {
   const router = useRouter();
-
+  const pathname = usePathname();
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setDisplayName(null);
         setEmail(null);
         return;
       }
-
       setEmail(user.email ?? null);
-
       const { data: profile } = await supabase
         .from("profiles")
         .select("display_name")
         .eq("id", user.id)
         .maybeSingle();
-
       setDisplayName(profile?.display_name ?? null);
     }
 
-    loadUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    void loadUser();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
         setDisplayName(null);
         setEmail(null);
-        return;
+      } else {
+        setEmail(session.user.email ?? null);
+        void loadUser();
       }
-
-      setEmail(session.user.email ?? null);
-      loadUser();
     });
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   async function signOut() {
@@ -60,76 +55,41 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-      <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 sm:py-4">
-        {/* Top row on mobile / single row on desktop */}
-        <div className="flex items-center justify-between">
-          <Link
-            href="/"
-            className="brand-font text-2xl font-bold tracking-wide text-green-900 sm:text-3xl"
-          >
-            Parlay Money Machine
+    <>
+      <header className="sportsbook-header sticky top-0 z-50">
+        <div className="sportsbook-header-inner">
+          <Link href="/" className="sportsbook-brand" aria-label="Parlay Money Machine home">
+            <span className="brand-mark">P</span>
+            <span><strong>PARLAY</strong><small>MONEY MACHINE</small></span>
           </Link>
-
-          {email && (
-            <div className="flex items-center gap-2 sm:gap-4">
-              <Link
-                href="/profile"
-                className="max-w-[120px] truncate text-sm font-semibold text-gray-600 transition hover:text-gray-900 sm:max-w-[180px] sm:text-sm"
-              >
-                {displayName || email}
+          <nav className="sportsbook-nav" aria-label="Main navigation">
+            {navigation.map(({ href, label }) => (
+              <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "is-active" : ""}>
+                {label}
               </Link>
-
-              <button
-                onClick={signOut}
-                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-700 sm:px-4"
-              >
-                Sign Out
-              </button>
-            </div>
-          )}
-
-          {!email && (
-            <Link
-              href="/login"
-              className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-700 sm:px-4"
-            >
-              Sign In
-            </Link>
-          )}
+            ))}
+          </nav>
+          <div className="sportsbook-account">
+            {email ? (
+              <>
+                <Link href="/profile" className="account-profile" title="Profile">
+                  <span className="account-avatar">{(displayName || email).slice(0, 1).toUpperCase()}</span>
+                  <span className="account-name">{displayName || "My profile"}</span>
+                </Link>
+                <button onClick={signOut} className="sign-out-button">Sign out</button>
+              </>
+            ) : <Link href="/login" className="sign-in-button">Sign in</Link>}
+          </div>
         </div>
-
-        {/* Navigation */}
-        <nav className="mt-3 flex items-center justify-center gap-4 text-sm font-semibold sm:absolute sm:left-1/2 sm:mt-0 sm:-translate-x-1/2 sm:gap-6">
-          <Link
-            href="/"
-            className="text-gray-600 transition hover:text-gray-900"
-          >
-            Home
+      </header>
+      <nav className="mobile-dock" aria-label="Mobile navigation">
+        {navigation.map(({ href, label }) => (
+          <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "is-active" : ""}>
+            <span className="dock-glyph" aria-hidden="true">{label === "Home" ? "⌂" : label === "Daily Edge" ? "✳" : label === "My Bets" ? "▤" : label === "Friends" ? "♧" : "♙"}</span>
+            <span>{label}</span>
           </Link>
-
-          <Link
-            href="/wagers"
-            className="text-gray-600 transition hover:text-gray-900"
-          >
-            My Bets
-          </Link>
-
-          <Link
-            href="/friends"
-            className="text-gray-600 transition hover:text-gray-900"
-          >
-            Friends
-          </Link>
-
-          <Link
-            href="/leaderboard"
-            className="text-gray-600 transition hover:text-gray-900"
-          >
-            Leaderboard
-          </Link>
-        </nav>
-      </div>
-    </header>
+        ))}
+      </nav>
+    </>
   );
 }

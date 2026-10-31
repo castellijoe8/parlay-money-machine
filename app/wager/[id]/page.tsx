@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import { placeSingle } from "@/lib/wager-request";
+import type { Selection } from "@/lib/betting";
 import { supabase } from "@/lib/supabase";
+import { MatchupIntelligence } from "@/app/daily-edge-feed";
 
 type Game = {
   id: string;
+  sport: string | null;
   away_team: string;
   home_team: string;
   starts_at: string;
@@ -35,6 +39,8 @@ export default function WagerPage() {
   const router = useRouter();
   const gameId = params.id as string;
 
+  const submissionLock = useRef(false);
+  const requestId = useRef<string | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [selectedBet, setSelectedBet] = useState<BetOption | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +60,7 @@ export default function WagerPage() {
       const { data, error } = await supabase
         .from("games")
         .select(
-          "id, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
+          "id, sport, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home"
         )
         .eq("id", gameId)
         .single();
@@ -120,77 +126,23 @@ export default function WagerPage() {
       return;
     }
 
+    requestId.current = crypto.randomUUID();
     setSelectedBet(option);
     setMessage("");
   }
 
   async function placeWager() {
-    if (!selectedBet || !game) {
-      return;
-    }
-
-    setSaving(true);
-    setMessage("");
-
-    // Final client-side cutoff check immediately before saving.
-    if (new Date(game.starts_at).getTime() <= Date.now()) {
-      showWageringClosed();
-      return;
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setMessage("Please sign in before placing a wager.");
-      setSaving(false);
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    // One more client-side check immediately before the insert.
-    if (new Date(game.starts_at).getTime() <= Date.now()) {
-      showWageringClosed();
-      return;
-    }
-
-    const { error } = await supabase.from("picks").insert({
-      game_id: game.id,
-      user_id: user.id,
-      user_name: profile?.display_name || "Player",
-      pick: selectedBet.pick,
-      bet_type: selectedBet.betType,
-      line: selectedBet.line,
-      odds: selectedBet.odds,
-      units: 1,
-      result: "pending",
-    });
-
-    if (error) {
-      console.error(error);
-
-      // The database trigger is the final authority.
-      // If kickoff happened while the request was processing,
-      // show the same friendly message as the frontend cutoff.
-      if (
-        error.message?.toLowerCase().includes("wagering is closed")
-      ) {
-        showWageringClosed();
-        return;
-      }
-
-      setMessage("Unable to place wager. Please try again.");
-      setSaving(false);
-      return;
-    }
-
-    router.push("/wagers");
+    if (!selectedBet || !game || submissionLock.current) return;
+    submissionLock.current = true; setSaving(true); setMessage("");
+    try {
+      requestId.current ??= crypto.randomUUID();
+      await placeSingle({ gameId: game.id, sport: game.sport as Selection["sport"], pick: selectedBet.pick,
+        betType: selectedBet.betType as Selection["betType"], line: selectedBet.line, odds: selectedBet.odds ?? 0 }, requestId.current);
+      setSelectedBet(null); requestId.current = null;
+      setMessage("Wager placed. You can select another market.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to place wager.");
+    } finally { submissionLock.current = false; setSaving(false); }
   }
 
   if (loading || currentTime === null) {
@@ -439,6 +391,7 @@ export default function WagerPage() {
             )}
           </div>
         </div>
+        <MatchupIntelligence game={game} />
       </div>
     </main>
   );

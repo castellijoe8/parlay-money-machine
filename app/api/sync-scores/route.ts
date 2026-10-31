@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { authorizeCron } from "@/lib/cron-auth";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { SPORT_API_CONFIG, SPORTS, type SupportedSport } from "@/lib/sports";
 import { getSyncMinimumIntervalMinutes, isSyncDue } from "@/lib/sync-schedule";
-
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!);
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { finishSystemJobRun, startSystemJobRun } from "@/lib/system-job-runs";
 
 type ScoreGame = {
   id: string;
@@ -13,7 +14,7 @@ type ScoreGame = {
   scores?: Array<{ name: string; score: string }>;
 };
 
-async function syncSportScores(sport: SupportedSport, apiKey: string) {
+async function syncSportScores(supabase: SupabaseClient, sport: SupportedSport, apiKey: string) {
   const response = await fetch(
     `https://api.the-odds-api.com/v4/sports/${SPORT_API_CONFIG[sport].oddsApiKey}/scores/?apiKey=${apiKey}&daysFrom=3`,
     { cache: "no-store" }
@@ -57,13 +58,25 @@ async function syncSportScores(sport: SupportedSport, apiKey: string) {
       const { error: scoreError } = await supabase.rpc("score_game", { game_id_input: updatedGame.id });
       if (scoreError) console.error(`Error scoring game ${updatedGame.id}:`, scoreError);
       else gamesScored++;
+      const { error: parlayError } = await supabase.rpc("settle_parlay_legs", { game_id_input: updatedGame.id });
+      if (parlayError) console.error(`Error settling parlay legs for game ${updatedGame.id}:`, parlayError);
     }
   }
 
   return { games_found: games.length, games_updated: updated, live_games: liveGames, games_scored: gamesScored, games_not_in_database: gamesNotInDatabase };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = authorizeCron(request);
+  if (denied) return denied;
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase server configuration is incomplete" },
+      { status: 500 }
+    );
+  }
+
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "ODDS_API_KEY is not configured" }, { status: 500 });
 
@@ -74,11 +87,14 @@ export async function GET() {
     return NextResponse.json({ success: true, skipped: true, reason: "Score check is not due yet", minimum_interval_minutes: getSyncMinimumIntervalMinutes() });
   }
 
+  const runId = await startSystemJobRun(supabase, "scores");
   try {
-    const results = Object.fromEntries(await Promise.all(SPORTS.map(async (sport) => [sport, await syncSportScores(sport, apiKey)])));
+    const results = Object.fromEntries(await Promise.all(SPORTS.map(async (sport) => [sport, await syncSportScores(supabase, sport, apiKey)])));
     await supabase.from("sync_state").update({ last_run_at: new Date().toISOString() }).eq("key", "scores");
+    await finishSystemJobRun(supabase, runId, "succeeded", { sports: results });
     return NextResponse.json({ success: true, skipped: false, sports: results });
   } catch (error) {
+    await finishSystemJobRun(supabase, runId, "failed", { error: error instanceof Error ? error.message : "Unknown error" });
     console.error("Scores API request failed:", error);
     return NextResponse.json({ error: "Scores API request failed", details: error instanceof Error ? error.message : "Unknown error" }, { status: 502 });
   }
