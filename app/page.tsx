@@ -899,11 +899,15 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ idempotencyKey: requestId, stake: Number(parlayStake), selections: parlaySelections.map(({ game, pick, betType, line, odds }) => ({ gameId: game.id, pick, betType, line, odds })) }),
       });
-      const result = await response.json() as { error?: string; currentOdds?: Record<string, number> };
-      if (response.status === 409 && result.currentOdds) {
+      const result = await response.json() as { error?: string; currentSelections?: Record<string, { odds: number | null; line: number | null }> };
+      if (response.status === 409 && result.currentSelections) {
         const accept = window.confirm(`${result.error ?? "Prices changed."}\n\nAccept the updated prices and submit?`);
         if (accept) {
-          setParlaySelections((legs) => legs.map((leg) => ({ ...leg, odds: result.currentOdds?.[leg.game.id] ?? leg.odds })));
+          setParlaySelections((legs) => legs.map((leg) => {
+            const current = result.currentSelections?.[leg.game.id];
+            return current ? { ...leg, odds: current.odds, line: current.line } : leg;
+          }));
+          setParlayRequestId(null);
         }
         setWagerMessage(accept ? "Prices updated. Review the new total, then submit again." : "Parlay not submitted. Your selections are still in the slip.");
         return;

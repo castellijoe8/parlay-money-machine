@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     const { data: games, error } = await client.from("games").select("id, sport, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home").in("id", selections.map((item) => item.gameId));
     if (error || !games || games.length !== selections.length) return NextResponse.json({ error: "One or more games are unavailable." }, { status: 400 });
     const gameById = new Map(games.map((game) => [game.id, game as unknown as Record<string, unknown>]));
-    const currentOdds: Record<string, number> = {};
+    const currentSelections: Record<string, { odds: number | null; line: number | null }> = {};
     for (const selection of selections) {
       const game = gameById.get(selection.gameId)!;
       if (!["nfl", "ncaaf"].includes(String(game.sport))) return NextResponse.json({ error: "Only NFL and NCAA FBS selections are supported." }, { status: 400 });
@@ -50,10 +50,12 @@ export async function POST(request: Request) {
       if (!validPick) return NextResponse.json({ error: "A selection does not match its game." }, { status: 400 });
       const price = PRICE_COLUMN[selection.betType](game, selection);
       const line = LINE_COLUMN[selection.betType](game, selection);
-      if (!Number.isInteger(price) || price === 0 || (selection.betType !== "Moneyline" && (typeof line !== "number" || selection.line !== line))) return NextResponse.json({ error: "One or more markets are unavailable or changed." }, { status: 409 });
-      currentOdds[selection.gameId] = price as number;
+      currentSelections[selection.gameId] = {
+        odds: Number.isInteger(price) && price !== 0 ? price as number : null,
+        line: selection.betType === "Moneyline" ? null : typeof line === "number" ? line : null,
+      };
     }
-    if (selections.some((selection) => currentOdds[selection.gameId] !== selection.odds)) return NextResponse.json({ error: "Prices changed. Review and accept the updated odds before submitting.", currentOdds }, { status: 409 });
+    if (selections.some((selection) => currentSelections[selection.gameId].odds === null || currentSelections[selection.gameId].odds !== selection.odds || currentSelections[selection.gameId].line !== selection.line)) return NextResponse.json({ error: "Prices changed. Review and accept the updated odds and lines before submitting.", currentSelections }, { status: 409 });
 
     const odds = calculateParlayOdds(selections.map((item) => item.odds));
     const payout = calculatePayout(Number(stake), odds.decimalOdds);
@@ -66,7 +68,19 @@ export async function POST(request: Request) {
       p_potential_return: payout.totalReturn, p_potential_profit: payout.profit, p_legs: legs,
     });
     if (saveError) {
-      if (saveError.message.toLowerCase().includes("price_changed")) return NextResponse.json({ error: "Prices changed before your wager was saved. Refresh selections to continue." }, { status: 409 });
+      if (saveError.message.toLowerCase().includes("price_changed")) {
+        const { data: refreshedGames } = await client.from("games").select("id,home_team,spread,spread_home,spread_odds_away,spread_odds_home,total,total_odds_over,total_odds_under,moneyline_away,moneyline_home").in("id", selections.map((item) => item.gameId));
+        const refreshedById = new Map((refreshedGames ?? []).map((game) => [game.id, game as unknown as Record<string, unknown>]));
+        const latest: typeof currentSelections = {};
+        for (const selection of selections) {
+          const game = refreshedById.get(selection.gameId);
+          if (!game) continue;
+          const price = PRICE_COLUMN[selection.betType](game, selection);
+          const line = LINE_COLUMN[selection.betType](game, selection);
+          latest[selection.gameId] = { odds: Number.isInteger(price) && price !== 0 ? price as number : null, line: selection.betType === "Moneyline" ? null : typeof line === "number" ? line : null };
+        }
+        return NextResponse.json({ error: "Prices changed before the wager was saved. Review the latest odds and lines, then submit again.", currentSelections: latest }, { status: 409 });
+      }
       if (saveError.message.toLowerCase().includes("wagering_closed")) return NextResponse.json({ error: "Wagering is closed for one or more games." }, { status: 409 });
       console.error("Parlay creation failed:", saveError);
       return NextResponse.json({ error: "Unable to save this parlay." }, { status: 500 });
