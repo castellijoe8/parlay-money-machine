@@ -22,6 +22,12 @@ type Wager = {
   } | null;
 };
 
+type Parlay = {
+  id: string; stake: number; combined_american_odds: number; combined_decimal_odds: number;
+  potential_return: number; potential_profit: number; actual_return: number | null; status: string; created_at: string;
+  legs: Array<{ id: string; sport: string; market: string; selection: string; line: number | null; american_odds: number; result: string; game: { away_team: string; home_team: string; starts_at: string; status: string } | null }>;
+};
+
 type ResultFilter = "all" | "pending" | "wins" | "losses" | "pushes";
 type TimeFilter = "all" | "week" | "month" | "season";
 type BetTypeFilter = "all" | "spread" | "moneyline" | "total";
@@ -30,6 +36,8 @@ type SportFilter = "all" | "ncaaf" | "nfl";
 
 export default function WagersPage() {
   const [wagers, setWagers] = useState<Wager[]>([]);
+  const [parlays, setParlays] = useState<Parlay[]>([]);
+  const [shareLinks, setShareLinks] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -86,8 +94,22 @@ export default function WagersPage() {
       return;
     }
 
+    const { data: parlayData, error: parlayError } = await supabase.from("parlay_wagers").select("id,stake,combined_american_odds,combined_decimal_odds,potential_return,potential_profit,actual_return,status,created_at,legs:parlay_legs(id,sport,market,selection,line,american_odds,result,game:games(away_team,home_team,starts_at,status))").eq("user_id", user.id).order("created_at", { ascending: false });
+    if (parlayError) console.error("Error loading parlays:", parlayError);
+    setParlays((parlayData as unknown as Parlay[]) ?? []);
+
     setWagers((data as unknown as Wager[]) || []);
     setLoading(false);
+  }
+
+  async function shareParlay(parlayId: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setMessage("Please log in to share a parlay."); return; }
+    const response = await fetch(`/api/parlays/${parlayId}/share`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}` } });
+    const data = await response.json() as { url?: string; error?: string };
+    if (!response.ok || !data.url) { setMessage(data.error ?? "Could not create a share link."); return; }
+    setShareLinks((current) => ({ ...current, [parlayId]: data.url! }));
+    await navigator.clipboard?.writeText(data.url);
   }
 
   useEffect(() => {
@@ -773,7 +795,7 @@ export default function WagersPage() {
         <div className="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 shadow-sm">
           Loading your bets...
         </div>
-      ) : wagers.length === 0 ? (
+      ) : wagers.length === 0 && parlays.length === 0 ? (
         <div className="rounded-2xl border bg-white p-10 text-center shadow-sm">
           <div className="text-lg font-bold">
             No bets yet
@@ -790,6 +812,7 @@ export default function WagersPage() {
         </div>
       ) : (
         <>
+          {parlays.length > 0 && <section className="mb-8"><h2 className="mb-3 text-lg font-black">Parlays <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">{parlays.length}</span></h2><div className="space-y-3">{parlays.map((parlay) => <details key={parlay.id} className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm"><summary className="cursor-pointer list-none"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-green-100 px-2 py-1 text-[10px] font-black uppercase text-green-800">Parlay · {parlay.legs.length} legs</span><p className="mt-2 text-sm font-extrabold">Combined odds {parlay.combined_american_odds > 0 ? "+" : ""}{parlay.combined_american_odds}</p><p className="text-xs text-gray-500">{new Date(parlay.created_at).toLocaleString()} · ${Number(parlay.stake).toFixed(2)} stake</p></div><div className="text-right"><p className="text-sm font-black uppercase">{parlay.status}</p><p className="text-xs text-gray-500">{parlay.actual_return !== null ? `Return $${Number(parlay.actual_return).toFixed(2)}` : `Potential return $${Number(parlay.potential_return).toFixed(2)}`}</p><p className="text-xs text-gray-500">Potential profit ${Number(parlay.potential_profit).toFixed(2)}</p></div></div></summary><div className="mt-3"><button onClick={() => void shareParlay(parlay.id)} className="rounded-lg border px-3 py-2 text-xs font-bold">{shareLinks[parlay.id] ? "Copy share link" : "Share parlay"}</button>{shareLinks[parlay.id] && <a href={shareLinks[parlay.id]} className="ml-2 break-all text-xs text-green-700">{shareLinks[parlay.id]}</a>}</div><div className="mt-3 space-y-2 border-t pt-3">{parlay.legs.map((leg) => <div key={leg.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-gray-50 p-2.5 text-xs"><div><p className="font-bold">{leg.selection} {leg.market === "Moneyline" ? "ML" : leg.line === null ? "" : leg.market === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.american_odds > 0 ? "+" : ""}{leg.american_odds}</span></p><p className="text-gray-500">{leg.sport.toUpperCase()} · {leg.game?.away_team} vs. {leg.game?.home_team}</p></div><span className="font-bold uppercase">{leg.result}{leg.game?.status === "live" ? " · live" : ""}</span></div>)}</div></details>)}</div></section>}
           {/* Pending Bets */}
           {filteredPending.length > 0 && (
             <section className="mb-8">

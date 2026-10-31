@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { DailyEdgePreview } from "@/app/daily-edge-feed";
+import { calculateParlayOdds, calculatePayout } from "@/lib/parlay-odds";
 
 type Sport = "ncaaf" | "nfl";
 
@@ -66,6 +67,7 @@ type BetOption = {
 };
 
 const SCROLL_KEY = "parlay-money-machine-home-scroll";
+const PARLAY_KEY = "parlay-money-machine-selections-v1";
 
 /*
 |--------------------------------------------------------------------------
@@ -518,6 +520,26 @@ export default function HomePage() {
 
   const [wagerMessage, setWagerMessage] =
     useState("");
+  const [parlayMode, setParlayMode] = useState(false);
+  const [parlaySelections, setParlaySelections] = useState<BetOption[]>([]);
+  const [parlayStake, setParlayStake] = useState("10");
+  const [parlayRequestId, setParlayRequestId] = useState<string | null>(null);
+  const [parlayHydrated, setParlayHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PARLAY_KEY);
+      // Browser storage is restored after hydration to avoid server/client markup mismatch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setParlaySelections(JSON.parse(saved) as BetOption[]);
+    } catch { localStorage.removeItem(PARLAY_KEY); }
+    // Hydrate browser-persisted bet slip state after initial server render.
+    setParlayHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (parlayHydrated) localStorage.setItem(PARLAY_KEY, JSON.stringify(parlaySelections));
+  }, [parlayHydrated, parlaySelections]);
 
   useEffect(() => {
     loadGames();
@@ -832,6 +854,22 @@ export default function HomePage() {
       return;
     }
 
+    if (parlayMode) {
+      if (option.odds === null || option.odds === 0 || option.line === undefined) {
+        setWagerMessage("This selection does not have a valid price.");
+        return;
+      }
+      if (parlaySelections.some((leg) => leg.game.id === option.game.id)) {
+        setWagerMessage("Only one selection per game is supported because same-game combinations can be correlated. Remove the existing leg first.");
+        return;
+      }
+      setParlaySelections((legs) => [...legs, option]);
+      setParlayRequestId(null);
+      setWagerMessage("");
+      setSelectedBet(null);
+      return;
+    }
+
     setWagerMessage("");
     setSelectedBet(option);
   }
@@ -842,10 +880,42 @@ export default function HomePage() {
     betType: string
   ) {
     return (
-      selectedBet?.game.id === gameId &&
-      selectedBet.pick === pick &&
-      selectedBet.betType === betType
+      (selectedBet?.game.id === gameId && selectedBet.pick === pick && selectedBet.betType === betType) ||
+      parlaySelections.some((leg) => leg.game.id === gameId && leg.pick === pick && leg.betType === betType)
     );
+  }
+
+  async function submitParlay() {
+    if (placingWager || parlaySelections.length < 2) return;
+    setPlacingWager(true);
+    setWagerMessage("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Please log in to place a parlay.");
+      const requestId = parlayRequestId ?? crypto.randomUUID();
+      if (!parlayRequestId) setParlayRequestId(requestId);
+      const response = await fetch("/api/parlays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ idempotencyKey: requestId, stake: Number(parlayStake), selections: parlaySelections.map(({ game, pick, betType, line, odds }) => ({ gameId: game.id, pick, betType, line, odds })) }),
+      });
+      const result = await response.json() as { error?: string; currentOdds?: Record<string, number> };
+      if (response.status === 409 && result.currentOdds) {
+        const accept = window.confirm(`${result.error ?? "Prices changed."}\n\nAccept the updated prices and submit?`);
+        if (accept) {
+          setParlaySelections((legs) => legs.map((leg) => ({ ...leg, odds: result.currentOdds?.[leg.game.id] ?? leg.odds })));
+        }
+        setWagerMessage(accept ? "Prices updated. Review the new total, then submit again." : "Parlay not submitted. Your selections are still in the slip.");
+        return;
+      }
+      if (!response.ok) throw new Error(result.error ?? "Unable to submit parlay.");
+      setParlaySelections([]);
+      setParlayRequestId(null);
+      setParlayMode(false);
+      router.push("/wagers");
+    } catch (error) {
+      setWagerMessage(error instanceof Error ? error.message : "Unable to submit parlay.");
+    } finally { setPlacingWager(false); }
   }
 
   async function placeWager() {
@@ -1665,7 +1735,7 @@ export default function HomePage() {
   return (
     <main
       className={`min-h-screen bg-gray-50 px-3 py-4 sm:px-6 sm:py-8 ${
-        selectedBet
+        selectedBet || parlayMode
           ? "pb-40 sm:pb-44"
           : ""
       }`}
@@ -1687,6 +1757,9 @@ export default function HomePage() {
               <p className="mt-1 text-xs text-gray-500 sm:text-sm">
                 1 unit. One game. No excuses.
               </p>
+              <button type="button" onClick={() => { if (!parlayMode && selectedBet && !parlaySelections.some((leg) => leg.game.id === selectedBet.game.id)) setParlaySelections((legs) => [...legs, selectedBet]); setParlayMode((mode) => !mode); setWagerMessage(""); }} className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-xs font-extrabold text-white hover:bg-green-800">
+                {parlayMode ? `Parlay Builder · ${parlaySelections.length} legs (on)` : `Build a Parlay${parlaySelections.length ? ` · ${parlaySelections.length}` : ""}`}
+              </button>
             </div>
 
             <div className="hidden shrink-0 text-right sm:block">
@@ -2010,7 +2083,9 @@ export default function HomePage() {
       </div>
 
       {/* Sticky Bet Slip */}
-      {selectedBet ? (
+      {parlayMode ? (
+        <ParlaySlip selections={parlaySelections} stake={parlayStake} setStake={(value) => { setParlayStake(value); setParlayRequestId(null); }} remove={(gameId) => { setParlaySelections((legs) => legs.filter((leg) => leg.game.id !== gameId)); setParlayRequestId(null); }} clear={() => { setParlaySelections([]); setParlayRequestId(null); }} exit={() => { setParlayMode(false); setWagerMessage(""); }} submit={submitParlay} submitting={placingWager} message={wagerMessage} />
+      ) : selectedBet ? (
         <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 shadow-2xl backdrop-blur">
           <div className="mx-auto max-w-5xl px-3 py-3 sm:px-6 sm:py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
@@ -2114,4 +2189,22 @@ export default function HomePage() {
       ) : null}
     </main>
   );
+}
+
+function ParlaySlip({ selections, stake, setStake, remove, clear, exit, submit, submitting, message }: {
+  selections: BetOption[]; stake: string; setStake: (stake: string) => void;
+  remove: (gameId: string) => void; clear: () => void; exit: () => void;
+  submit: () => void; submitting: boolean; message: string;
+}) {
+  let combined: ReturnType<typeof calculateParlayOdds> | null = null;
+  let payout: ReturnType<typeof calculatePayout> | null = null;
+  if (selections.length >= 2) {
+    try { combined = calculateParlayOdds(selections.map((leg) => leg.odds ?? NaN)); payout = calculatePayout(Number(stake), combined.decimalOdds); } catch { /* invalid stake/prices are explained below */ }
+  }
+  return <div className="fixed inset-x-0 bottom-0 z-50 max-h-[78vh] overflow-y-auto border-t border-gray-200 bg-white/98 shadow-2xl backdrop-blur"><div className="mx-auto max-w-5xl px-3 py-3 sm:px-6 sm:py-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-extrabold text-gray-900">Parlay Builder <span className="text-green-700">· {selections.length} selections</span></p><p className="text-xs text-gray-500">One selection per game · NFL and college football</p></div><div className="flex gap-2"><button onClick={clear} disabled={!selections.length} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40">Clear all</button><button onClick={exit} className="rounded-lg px-3 py-2 text-xs font-bold text-gray-600">Single wager mode</button></div></div>
+    {selections.length ? <div className="mt-3 space-y-2">{selections.map((leg) => <div key={leg.game.id} className="flex items-center justify-between gap-2 rounded-xl bg-gray-50 p-2.5"><div className="min-w-0"><p className="truncate text-xs font-bold text-gray-900">{leg.pick} {leg.betType === "Moneyline" ? "ML" : leg.line === null ? "" : leg.betType === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.odds && leg.odds > 0 ? "+" : ""}{leg.odds ?? "—"}</span></p><p className="truncate text-[10px] text-gray-500">{leg.game.sport?.toUpperCase()} · {leg.game.away_team} vs. {leg.game.home_team} · {leg.betType}</p></div><button aria-label={`Remove ${leg.pick}`} onClick={() => remove(leg.game.id)} className="rounded-md px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>)}</div> : <p className="py-3 text-sm text-gray-500">Choose at least two outcomes from different games. Your selections stay saved while you browse.</p>}
+    {selections.length >= 2 && <><div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-900 p-3 text-white sm:grid-cols-4"><div><p className="text-[10px] text-gray-300">COMBINED ODDS</p><p className="font-extrabold">{combined ? `${combined.americanOdds > 0 ? "+" : ""}${combined.americanOdds}` : "—"} {combined && <span className="text-xs font-medium text-gray-300">({combined.decimalOdds.toFixed(3)})</span>}</p></div><label className="text-[10px] text-gray-300">STAKE<input type="number" min="0.01" step="0.01" value={stake} onChange={(event) => setStake(event.target.value)} className="mt-1 w-full rounded-md px-2 py-1 text-sm font-bold text-gray-900" /></label><div><p className="text-[10px] text-gray-300">POTENTIAL PROFIT</p><p className="font-extrabold">{payout ? `$${payout.profit.toFixed(2)}` : "—"}</p></div><div><p className="text-[10px] text-gray-300">TOTAL RETURN</p><p className="font-extrabold">{payout ? `$${payout.totalReturn.toFixed(2)}` : "—"}</p></div><div className="col-span-2 flex flex-wrap gap-1 sm:col-span-4">{[5, 10, 25, 50, 100].map((amount) => <button key={amount} onClick={() => setStake(String(amount))} className="rounded-md border border-white/30 px-2 py-1 text-[10px]">${amount}</button>)}<button disabled={submitting || !payout} onClick={submit} className="ml-auto rounded-lg bg-green-500 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Place Parlay"}</button></div></div><p className="mt-2 text-[10px] text-gray-500">Potential payouts are not guaranteed. Same-game combinations are disabled because correlated outcomes need a separately priced market.</p></>}
+    {message && <p role="status" className="mt-2 text-xs font-semibold text-red-600">{message}</p>}
+  </div></div>;
 }

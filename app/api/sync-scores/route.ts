@@ -57,6 +57,8 @@ async function syncSportScores(supabase: SupabaseClient, sport: SupportedSport, 
       const { error: scoreError } = await supabase.rpc("score_game", { game_id_input: updatedGame.id });
       if (scoreError) console.error(`Error scoring game ${updatedGame.id}:`, scoreError);
       else gamesScored++;
+      const { error: parlayError } = await supabase.rpc("settle_parlay_legs", { game_id_input: updatedGame.id });
+      if (parlayError) console.error(`Error settling parlay legs for game ${updatedGame.id}:`, parlayError);
     }
   }
 
