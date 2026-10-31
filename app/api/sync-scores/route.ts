@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SPORT_API_CONFIG, SPORTS, type SupportedSport } from "@/lib/sports";
 import { getSyncMinimumIntervalMinutes, isSyncDue } from "@/lib/sync-schedule";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { finishSystemJobRun, startSystemJobRun } from "@/lib/system-job-runs";
 
 type ScoreGame = {
   id: string;
@@ -81,11 +82,14 @@ export async function GET() {
     return NextResponse.json({ success: true, skipped: true, reason: "Score check is not due yet", minimum_interval_minutes: getSyncMinimumIntervalMinutes() });
   }
 
+  const runId = await startSystemJobRun(supabase, "scores");
   try {
     const results = Object.fromEntries(await Promise.all(SPORTS.map(async (sport) => [sport, await syncSportScores(supabase, sport, apiKey)])));
     await supabase.from("sync_state").update({ last_run_at: new Date().toISOString() }).eq("key", "scores");
+    await finishSystemJobRun(supabase, runId, "succeeded", { sports: results });
     return NextResponse.json({ success: true, skipped: false, sports: results });
   } catch (error) {
+    await finishSystemJobRun(supabase, runId, "failed", { error: error instanceof Error ? error.message : "Unknown error" });
     console.error("Scores API request failed:", error);
     return NextResponse.json({ error: "Scores API request failed", details: error instanceof Error ? error.message : "Unknown error" }, { status: 502 });
   }

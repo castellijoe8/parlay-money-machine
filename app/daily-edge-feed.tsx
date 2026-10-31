@@ -2,56 +2,39 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { recentGameNuggets, teamForm, teamStreak, type EdgeNugget, type FinalGame } from "@/lib/daily-edge";
-import { supabase } from "@/lib/supabase";
+import type { EdgeNugget } from "@/lib/daily-edge";
 
-const gameFields = "id, sport, away_team, home_team, starts_at, status, home_score, away_score";
-const sports = ["ncaaf", "nfl"] as const;
+type WeeklyData = {
+  window: { start: string; end: string; label: string; timeZone: string };
+  weeklyGameCount: number;
+  upcomingGameCount: number;
+  collegeCoverage: string;
+  insights: EdgeNugget[];
+  oddsHistoryAvailable: boolean;
+  earliestCapturedAt: string | null;
+  health: { lastOddsSyncAt: string | null; lastScoreSyncAt: string | null; lastOddsFailureAt: string | null; lastOddsFailure: string | null; lastScoreFailureAt: string | null; lastScoreFailure: string | null; lastTrendCalculationAt: string | null; lastTrendFailureAt: string | null; lastTrendFailure: string | null; dataStale: boolean; explanationMode: string };
+};
 
-async function loadFinalHistory() {
-  const responses = await Promise.all(sports.map((sport) =>
-    supabase.from("games").select(gameFields).eq("sport", sport).eq("status", "final").not("home_score", "is", null).not("away_score", "is", null).order("starts_at", { ascending: false }).limit(1000)
-  ));
-  const failed = responses.some(({ error }) => error);
-  return {
-    failed,
-    games: responses.flatMap(({ data }) => (data ?? []) as FinalGame[]).sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at)),
-  };
-}
-
-function useDailyEdge() {
-  const [nuggets, setNuggets] = useState<EdgeNugget[]>([]);
-  const [todayGames, setTodayGames] = useState<FinalGame[]>([]);
-  const [history, setHistory] = useState<FinalGame[]>([]);
+function useWeeklyEdge() {
+  const [data, setData] = useState<WeeklyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
-      const [todayResult, historyResult] = await Promise.all([
-        supabase.from("games").select(gameFields).in("status", ["scheduled", "live"]).gte("starts_at", start).lt("starts_at", end).order("starts_at"),
-        loadFinalHistory(),
-      ]);
-      if (cancelled) return;
-      if (todayResult.error || historyResult.failed) {
-        setError(true);
-      } else {
-        const games = (todayResult.data ?? []) as FinalGame[];
-        const finals = historyResult.games;
-        setTodayGames(games);
-        setHistory(finals);
-        setNuggets(recentGameNuggets(games, finals));
-      }
-      setLoading(false);
-    }
+    const controller = new AbortController();
+    const load = () => fetch("/api/daily-edge", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Daily Edge unavailable");
+        return response.json() as Promise<WeeklyData>;
+      })
+      .then((nextData) => { setData(nextData); setError(false); })
+      .catch(() => { if (!controller.signal.aborted) setError(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     void load();
-    return () => { cancelled = true; };
+    const interval = window.setInterval(() => { void load(); }, 15 * 60 * 1000);
+    window.addEventListener("focus", load);
+    return () => { controller.abort(); window.clearInterval(interval); window.removeEventListener("focus", load); };
   }, []);
-  return { nuggets, todayGames, history, loading, error };
+  return { data, loading, error };
 }
 
 function formatDate(value: string) {
@@ -59,85 +42,67 @@ function formatDate(value: string) {
 }
 
 function NuggetCard({ nugget }: { nugget: EdgeNugget }) {
-  return (
-    <article className="edge-card">
-      <div className="edge-card-top"><span className="edge-category">{nugget.category}</span><span className="edge-freshness">Through {formatDate(nugget.freshness)}</span></div>
-      <h3>{nugget.headline}</h3>
-      <p className="edge-matchup">{nugget.away} <span>@</span> {nugget.home}</p>
-      <p className="edge-stat">{nugget.detail}</p>
-      <p className="edge-reason">{nugget.reason}</p>
-      <Link href={`/wager/${nugget.gameId}`} className="edge-game-link">View matchup <span aria-hidden="true">→</span></Link>
-    </article>
-  );
+  return <article className="edge-card">
+    <div className="edge-card-top"><span className="edge-category">{nugget.category}</span><span className="edge-freshness">Updated {formatDate(nugget.freshness)}</span></div>
+    <h3>{nugget.headline}</h3>
+    <p className="edge-matchup">{nugget.away} <span>@</span> {nugget.home}</p>
+    <p className="edge-stat">{nugget.detail}</p>
+    <p className="edge-reason">{nugget.reason}</p>
+    {nugget.source && <small className="edge-source">Source: {nugget.source}</small>}
+    <Link href={`/wager/${nugget.gameId}`} className="edge-game-link">View matchup <span aria-hidden="true">→</span></Link>
+  </article>;
 }
 
 export function DailyEdgePreview() {
-  const { nuggets, loading, error } = useDailyEdge();
-  return (
-    <section className="edge-section edge-preview" aria-labelledby="daily-edge-heading">
-      <div className="edge-heading-row">
-        <div><p className="edge-eyebrow">DATA-LED GAME NOTES</p><h2 id="daily-edge-heading">The Daily Edge</h2><p>Historical trends worth a closer look. No trend guarantees an outcome.</p></div>
-        <Link href="/daily-edge" className="edge-all-link">All insights <span aria-hidden="true">→</span></Link>
-      </div>
-      {loading ? <p className="edge-state">Loading today’s game notes…</p> : error ? <p className="edge-state">Game history is temporarily unavailable.</p> : nuggets.length ? <div className="edge-grid">{nuggets.slice(0, 3).map((nugget) => <NuggetCard key={nugget.id} nugget={nugget} />)}</div> : <p className="edge-state">No reliable historical trends for today’s available matchups yet.</p>}
-    </section>
-  );
+  const { data, loading, error } = useWeeklyEdge();
+  return <section className="edge-section edge-preview" aria-labelledby="daily-edge-heading">
+    <div className="edge-heading-row"><div><p className="edge-eyebrow">WEEKLY BETTING INTELLIGENCE</p><h2 id="daily-edge-heading">The Daily Edge</h2><p>{data?.window.label ?? "NFL + college football trends from available data."}</p></div><Link href="/daily-edge" className="edge-all-link">All insights <span aria-hidden="true">→</span></Link></div>
+    {loading ? <p className="edge-state">Loading this week’s game notes…</p> : error ? <p className="edge-state">Game history is temporarily unavailable.</p> : data?.insights.length ? <div className="edge-grid">{data.insights.slice(0, 3).map((nugget) => <NuggetCard key={nugget.id} nugget={nugget} />)}</div> : <p className="edge-state">No strong, data-supported trends for this week’s available matchups yet.</p>}
+  </section>;
 }
 
 export default function DailyEdgeFeed() {
-  const { nuggets, todayGames, loading, error } = useDailyEdge();
-  return (
-    <main className="edge-page">
-      <div className="edge-page-inner">
-        <div className="edge-page-hero"><p className="edge-eyebrow">PARLAY MONEY MACHINE · DAILY INTELLIGENCE</p><h1>The Daily Edge</h1><p>Concise, score-backed context for today’s games. These are historical trends, not predictions or guarantees.</p></div>
-        <div className="edge-day-label"><span>{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</span><span>{todayGames.length} games on today’s board</span></div>
-        {loading ? <p className="edge-state">Loading today’s game notes…</p> : error ? <p className="edge-state">Game history is temporarily unavailable. Please try again later.</p> : nuggets.length ? <div className="edge-grid edge-grid-full">{nuggets.map((nugget) => <NuggetCard key={nugget.id} nugget={nugget} />)}</div> : <div className="edge-empty"><span aria-hidden="true">✳</span><h2>No reliable nuggets today</h2><p>{todayGames.length ? "Available historical results do not support a standout trend for today’s matchups." : "There are no available games scheduled for today."} We’ll show fewer insights instead of filling the board with weak or invented claims.</p></div>}
-        <p className="edge-disclosure">Statistics use completed game scores in the available history, grouped by sport. Records are limited to the most recent results on file; freshness reflects the latest supporting final. No odds history, injury feed, or news source is available in this app.</p>
-      </div>
-    </main>
-  );
+  const { data, loading, error } = useWeeklyEdge();
+  return <main className="edge-page"><div className="edge-page-inner">
+    <div className="edge-page-hero"><p className="edge-eyebrow">PARLAY MONEY MACHINE · WEEKLY INTELLIGENCE</p><h1>The Daily Edge</h1><p>Score-backed NFL and college football trends, ATS and totals records, and captured line movement. Descriptive context, not predictions or guarantees.</p></div>
+    <div className="edge-day-label"><span>{data?.window.label ?? "Current Pacific week"}</span><span>{data ? `${data.upcomingGameCount} upcoming · ${data.weeklyGameCount} games this week` : "NFL + NCAAF"}</span></div>
+    {loading ? <p className="edge-state">Loading this week’s game notes…</p> : error || !data ? <p className="edge-state">Game history is temporarily unavailable. Please try again later.</p> : data.insights.length ? [
+      { key: "nfl", label: "NFL", nuggets: data.insights.filter((item) => item.sport === "nfl") },
+      { key: "ncaaf", label: "College football · NCAAF", nuggets: data.insights.filter((item) => item.sport === "ncaaf") },
+    ].filter((group) => group.nuggets.length > 0).map((group) => <section className="edge-sport-group" key={group.key} aria-labelledby={`edge-${group.key}-heading`}><h2 id={`edge-${group.key}-heading`}>{group.label}</h2><div className="edge-grid edge-grid-full">{group.nuggets.map((nugget) => <NuggetCard key={nugget.id} nugget={nugget} />)}</div></section>) : <div className="edge-empty"><span aria-hidden="true">✳</span><h2>No standout nuggets this week</h2><p>Available results and odds history do not support a strong trend for the upcoming matchups. We show fewer insights instead of filling the board with weak claims.</p></div>}
+    {data && <div className="edge-disclosure">{data.health.dataStale && <p className="edge-stale">Schedule or score sync is older than 36 hours. Check the game sync status before relying on these notes.</p>}<p>Last odds sync: {data.health.lastOddsSyncAt ? new Date(data.health.lastOddsSyncAt).toLocaleString() : "not reported"} · Last score sync: {data.health.lastScoreSyncAt ? new Date(data.health.lastScoreSyncAt).toLocaleString() : "not reported"} · Last trend calculation: {data.health.lastTrendCalculationAt ? new Date(data.health.lastTrendCalculationAt).toLocaleString() : "not run"}.</p>{data.health.lastOddsFailureAt && <p>Latest odds sync failure ({new Date(data.health.lastOddsFailureAt).toLocaleString()}): {data.health.lastOddsFailure ?? "unknown error"}</p>}{data.health.lastScoreFailureAt && <p>Latest score sync failure ({new Date(data.health.lastScoreFailureAt).toLocaleString()}): {data.health.lastScoreFailure ?? "unknown error"}</p>}{data.health.lastTrendFailureAt && <p>Latest trend calculation failure ({new Date(data.health.lastTrendFailureAt).toLocaleString()}): {data.health.lastTrendFailure ?? "unknown error"}</p>}<p>{data.collegeCoverage}</p><p>{data.oddsHistoryAvailable ? `Odds movement is available from snapshots first collected ${data.earliestCapturedAt ? formatDate(data.earliestCapturedAt) : "during the current collection period"}; it does not represent pre-collection opening lines.` : "Odds history is not available yet. The odds snapshot database migration must be applied before ATS, totals, or line movement insights can appear."}</p><p>ATS and over/under records use captured pregame sportsbook lines and completed scores. Coverage starts when snapshots begin; results may be thin until a team has enough recorded games. Explanations use deterministic summaries; no AI provider is configured. No injury or news feed is connected.</p></div>}
+  </div></main>;
 }
 
-export function MatchupIntelligence({ game }: { game: Pick<FinalGame, "id" | "sport" | "away_team" | "home_team"> }) {
-  const [history, setHistory] = useState<FinalGame[]>([]);
+type MatchupData = {
+  teams: Array<{ team: string; last5: { wins: number; losses: number; ties: number; pointsFor: number; pointsAgainst: number; sampleSize: number }; last10: { wins: number; losses: number; ties: number; sampleSize: number }; streak: { result: "W" | "L" | "T"; count: number } | null; home: { wins: number; losses: number; ties: number; sampleSize: number }; away: { wins: number; losses: number; ties: number; sampleSize: number }; ats: { covers: number; misses: number; pushes: number; sampleSize: number }; totals: { covers: number; misses: number; pushes: number; sampleSize: number }; latestFinal: string | null }>;
+  headToHead: Array<{ id: string; starts_at: string; away_team: string; away_score: number; home_team: string; home_score: number }>;
+  currentLines: Record<string, Array<{ market: string; sportsbook: string; label: string; observedAt: string; values: Array<{ name: string; point: number | null; price: number | null }> }>>;
+  lineMovement: EdgeNugget[];
+  oddsHistoryAvailable: boolean;
+};
+
+export function MatchupIntelligence({ game }: { game: { id: string } }) {
+  const [data, setData] = useState<MatchupData | null>(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const result = await loadFinalHistory();
-      if (!cancelled && !result.failed) setHistory(result.games);
-      if (!cancelled) setLoaded(true);
-    }
-    void load();
-    return () => { cancelled = true; };
-  }, []);
-  const away = teamForm(history, game.away_team, game.sport);
-  const home = teamForm(history, game.home_team, game.sport);
-  const awayLastFive = teamForm(history, game.away_team, game.sport, 5);
-  const homeLastFive = teamForm(history, game.home_team, game.sport, 5);
-  const venueRecord = (team: string, venue: "home" | "away") => {
-    const games = history.filter((past) => past.sport === game.sport && (venue === "home" ? past.home_team === team : past.away_team === team));
-    const wins = games.filter((past) => (venue === "home" ? past.home_score! > past.away_score! : past.away_score! > past.home_score!)).length;
-    return { wins, losses: games.length - wins, count: games.length };
-  };
-  const awayRoad = venueRecord(game.away_team, "away");
-  const awayHome = venueRecord(game.away_team, "home");
-  const homeAtHome = venueRecord(game.home_team, "home");
-  const homeRoad = venueRecord(game.home_team, "away");
-  const awayStreak = teamStreak(away, game.away_team);
-  const homeStreak = teamStreak(home, game.home_team);
-  const meetings = history.filter((past) => past.status === "final" && past.home_score !== null && past.away_score !== null && past.sport === game.sport && ((past.home_team === game.home_team && past.away_team === game.away_team) || (past.home_team === game.away_team && past.away_team === game.home_team))).slice(0, 5);
-  return (
-    <section className="matchup-intelligence" aria-labelledby="matchup-intelligence-heading">
-      <div className="edge-heading-row"><div><p className="edge-eyebrow">SCORE-BASED HISTORY</p><h2 id="matchup-intelligence-heading">Betting intelligence</h2></div></div>
-      {!loaded ? <p className="edge-state">Loading completed game history…</p> : !away.games.length && !home.games.length ? <p className="edge-state">No completed score history is available for these teams yet.</p> : <>
-        <div className="form-grid">{[
-          { team: game.away_team, form: away, lastFive: awayLastFive, streak: awayStreak, homeSplit: awayHome, awaySplit: awayRoad },
-          { team: game.home_team, form: home, lastFive: homeLastFive, streak: homeStreak, homeSplit: homeAtHome, awaySplit: homeRoad },
-        ].map(({ team, form, lastFive, streak, homeSplit, awaySplit }) => <article className="form-card" key={team}><p className="edge-category">{team}</p><h3>Last {lastFive.games.length < 5 ? `${lastFive.games.length} available` : "5"}: {lastFive.wins}–{lastFive.losses}</h3><p>Last {form.games.length < 10 ? `${form.games.length} available` : "10"}: {form.wins}–{form.losses}</p><p>{form.pointsFor.toFixed(1)} scored <span>·</span> {form.pointsAgainst.toFixed(1)} allowed per game (last {form.games.length})</p><p>Home: {homeSplit.wins}–{homeSplit.losses} ({homeSplit.count}) <span>·</span> Away: {awaySplit.wins}–{awaySplit.losses} ({awaySplit.count})</p>{streak && <p className="form-streak">Current streak: {streak.count} {streak.result === "W" ? "win" : "loss"}{streak.count === 1 ? "" : "s"}</p>}{form.latestDate && <small>Latest final: {formatDate(form.latestDate)}</small>}</article>)}</div>
-        {meetings.length > 0 && <div className="h2h-history"><h3>Recent head-to-head</h3><ul>{meetings.map((past) => <li key={past.id}><span>{formatDate(past.starts_at)}</span><strong>{past.away_team} {past.away_score} — {past.home_score} {past.home_team}</strong></li>)}</ul></div>}
-        <p className="edge-disclosure">Based on the most recent completed scores available for each team. History is descriptive and does not predict this game. ATS, totals, line movement, injuries, and news are not shown because those data are not available.</p>
-      </>}
-    </section>
-  );
+    const controller = new AbortController();
+    fetch(`/api/daily-edge?gameId=${encodeURIComponent(game.id)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error("Matchup data unavailable"); return response.json() as Promise<MatchupData>; })
+      .then(setData).catch(() => { if (!controller.signal.aborted) setData(null); })
+      .finally(() => { if (!controller.signal.aborted) setLoaded(true); });
+    return () => controller.abort();
+  }, [game.id]);
+  const formatOdds = (price: number | null) => price === null ? "—" : price > 0 ? `+${price}` : String(price);
+  const formatRecord = (record: { wins: number; losses: number; ties?: number }) => `${record.wins}–${record.losses}${record.ties ? `–${record.ties}` : ""}`;
+  return <section className="matchup-intelligence" aria-labelledby="matchup-intelligence-heading">
+    <div className="edge-heading-row"><div><p className="edge-eyebrow">SCORES + CAPTURED ODDS</p><h2 id="matchup-intelligence-heading">Betting intelligence</h2></div></div>
+    {!loaded ? <p className="edge-state">Loading matchup history…</p> : !data ? <p className="edge-state">Matchup history is temporarily unavailable.</p> : <>
+      <div className="form-grid">{data.teams.map((team) => <article className="form-card" key={team.team}><p className="edge-category">{team.team}</p><h3>Last {team.last5.sampleSize}: {formatRecord(team.last5)}</h3><p>Last {team.last10.sampleSize}: {formatRecord(team.last10)}</p><p>{team.last5.pointsFor.toFixed(1)} scored · {team.last5.pointsAgainst.toFixed(1)} allowed per game</p><p>Home: {formatRecord(team.home)} ({team.home.sampleSize}) · Away: {formatRecord(team.away)} ({team.away.sampleSize})</p>{team.streak && <p className="form-streak">Current streak: {team.streak.count} {team.streak.result === "W" ? "win" : team.streak.result === "T" ? "tie" : "loss"}{team.streak.count === 1 ? "" : "s"}</p>}{team.ats.sampleSize > 0 && <p>ATS: {team.ats.covers}–{team.ats.misses}{team.ats.pushes ? `–${team.ats.pushes} pushes` : ""} ({team.ats.sampleSize} games)</p>}{team.totals.sampleSize > 0 && <p>O/U: {team.totals.covers} over · {team.totals.misses} under ({team.totals.sampleSize} games)</p>}{team.latestFinal && <small>Latest final: {new Date(team.latestFinal).toLocaleDateString()}</small>}</article>)}</div>
+      {data.lineMovement.length > 0 && <div className="h2h-history"><h3>Captured line movement</h3>{data.lineMovement.map((item) => <p className="edge-reason" key={item.id}><strong>{item.headline}.</strong> {item.detail} {item.reason}</p>)}</div>}
+      {data.headToHead.length > 0 && <div className="h2h-history"><h3>Recent head-to-head</h3><ul>{data.headToHead.map((past) => <li key={past.id}><span>{new Date(past.starts_at).toLocaleDateString()}</span><strong>{past.away_team} {past.away_score} — {past.home_score} {past.home_team}</strong></li>)}</ul></div>}
+      {data.oddsHistoryAvailable && <div className="h2h-history"><h3>Latest captured lines</h3>{[...data.currentLines.spreads ?? [], ...data.currentLines.totals ?? [], ...data.currentLines.moneylines ?? []].map((line) => <p className="edge-line-row" key={`${line.market}-${line.sportsbook}-${line.observedAt}`}><strong>{line.market === "h2h" ? "Moneyline" : line.market === "spreads" ? "Spread" : "Total"} · {line.label}:</strong> {line.values.map((value) => `${value.name} ${value.point !== null ? value.point : formatOdds(value.price)}`).join(" · ")} <small>as of {new Date(line.observedAt).toLocaleString()}</small></p>)}</div>}
+      <p className="edge-disclosure">Recent form and head-to-head use completed scores. ATS and totals use recorded pregame lines, and only games with odds captured by this system count. Captured movement begins with the first recorded snapshot; it may not include the true opening line. {data.oddsHistoryAvailable ? "" : "Odds snapshots are unavailable until the database migration is applied."}</p>
+    </>}
+  </section>;
 }

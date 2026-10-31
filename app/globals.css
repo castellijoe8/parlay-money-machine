@@ -115,6 +115,12 @@ input::placeholder { color: #748078; }
 .edge-page-hero > p:last-child { max-width: 580px; font-size: 14px; line-height: 1.6; }
 .edge-day-label { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 15px; color: #abb6ad; font-size: 12px; font-weight: 700; }
 .edge-grid-full { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.edge-sport-group { margin-top: 20px; }
+.edge-sport-group > h2 { margin: 0; color: #dce5dc; font-size: 17px; }
+.edge-source { display: block; margin: -7px 0 12px; color: #78847b; font-size: 9px; }
+.edge-line-row { margin: 7px 0; color: #a0aaa2; font-size: 11px; }
+.edge-line-row small { color: #78847b; }
+.edge-stale { color: #f0bd79; }
 .edge-empty { margin: 18px 0; padding: 34px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); text-align: center; }
 .edge-empty > span { color: var(--green); font-size: 24px; }
 .edge-empty h2 { margin: 7px 0; font-size: 20px; }
