@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { SPORT_API_CONFIG, SPORTS, type SupportedSport } from "@/lib/sports";
 import { getSyncMinimumIntervalMinutes, isSyncDue } from "@/lib/sync-schedule";
-
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!);
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type ScoreGame = {
   id: string;
@@ -13,7 +12,7 @@ type ScoreGame = {
   scores?: Array<{ name: string; score: string }>;
 };
 
-async function syncSportScores(sport: SupportedSport, apiKey: string) {
+async function syncSportScores(supabase: SupabaseClient, sport: SupportedSport, apiKey: string) {
   const response = await fetch(
     `https://api.the-odds-api.com/v4/sports/${SPORT_API_CONFIG[sport].oddsApiKey}/scores/?apiKey=${apiKey}&daysFrom=3`,
     { cache: "no-store" }
@@ -64,6 +63,14 @@ async function syncSportScores(sport: SupportedSport, apiKey: string) {
 }
 
 export async function GET() {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase server configuration is incomplete" },
+      { status: 500 }
+    );
+  }
+
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "ODDS_API_KEY is not configured" }, { status: 500 });
 
@@ -75,7 +82,7 @@ export async function GET() {
   }
 
   try {
-    const results = Object.fromEntries(await Promise.all(SPORTS.map(async (sport) => [sport, await syncSportScores(sport, apiKey)])));
+    const results = Object.fromEntries(await Promise.all(SPORTS.map(async (sport) => [sport, await syncSportScores(supabase, sport, apiKey)])));
     await supabase.from("sync_state").update({ last_run_at: new Date().toISOString() }).eq("key", "scores");
     return NextResponse.json({ success: true, skipped: false, sports: results });
   } catch (error) {

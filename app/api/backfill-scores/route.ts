@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SECRET_KEY!
-);
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function GET() {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { success: false, error: "Supabase server configuration is incomplete" },
+      { status: 500 }
+    );
+  }
+
   const { data: games, error } = await supabase
     .from("games")
     .select("id, external_id, home_team, away_team, home_score, away_score, status")
