@@ -37,13 +37,13 @@ export async function POST(request: Request) {
   if (!idempotencyKey || !/^[0-9a-f-]{36}$/i.test(idempotencyKey)) return NextResponse.json({ error: "Invalid submission key." }, { status: 400 });
   if (stake !== 1) return NextResponse.json({ error: "Parlays use a fixed one-unit stake." }, { status: 400 });
   if (!Array.isArray(selections) || selections.length < 2 || selections.length > 20) return NextResponse.json({ error: "A parlay must contain 2 to 20 selections." }, { status: 400 });
-  if (selections.some((item) => !item || typeof item.gameId !== "string" || typeof item.pick !== "string" || !["Spread", "Total", "Moneyline"].includes(item.betType) || !Number.isFinite(item.odds) || item.odds === 0 || (item.betType !== "Moneyline" && !Number.isFinite(item.line)))) return NextResponse.json({ error: "One or more selections are invalid." }, { status: 400 });
+  if (selections.some((item) => !item || typeof item.gameId !== "string" || typeof item.pick !== "string" || !["Spread", "Total", "Moneyline"].includes(item.betType) || !Number.isFinite(item.odds) || item.odds === 0 || (item.betType !== "Moneyline" && !Number.isFinite(item.line)) || (item.betType === "Moneyline" && item.line !== null))) return NextResponse.json({ error: "One or more selections are invalid." }, { status: 400 });
   const selectionKeys = selections.map(selectionKey);
   if (new Set(selectionKeys).size !== selections.length) return NextResponse.json({ error: "Duplicate selections are not allowed." }, { status: 400 });
 
   try {
     const { data: games, error } = await client.from("games").select("id, sport, away_team, home_team, starts_at, status, spread, spread_home, spread_odds_away, spread_odds_home, total, total_odds_over, total_odds_under, moneyline_away, moneyline_home").in("id", selections.map((item) => item.gameId));
-    if (error || !games || games.length !== selections.length) return NextResponse.json({ error: "One or more games are unavailable." }, { status: 400 });
+    if (error || !games || games.length !== new Set(selections.map((item) => item.gameId)).size) return NextResponse.json({ error: "One or more games are unavailable." }, { status: 400 });
     const gameById = new Map(games.map((game) => [game.id, game as unknown as Record<string, unknown>]));
     const currentSelections: Record<string, { odds: number | null; line: number | null }> = {};
     for (const selection of selections) {
