@@ -49,12 +49,13 @@ export default function LoginPage() {
         <h1 className="text-4xl font-bold">Parlay Money Machine</h1>
 
         <p className="mt-2 text-slate-400">
-          Sign in if you&apos;re retarded.
+          Your league. Your picks. Your bragging rights.
         </p>
 
         <div className="mt-8 space-y-4">
           <input
             type="email"
+            aria-label="Email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -63,6 +64,7 @@ export default function LoginPage() {
 
           <input
             type="password"
+            aria-label="Password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
