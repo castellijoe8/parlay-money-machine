@@ -26,7 +26,12 @@ export const COMPATIBILITY_MESSAGES = {
   repeated_moneyline: "You've already selected a moneyline for this game. Choose one team only.",
   repeated_total: "You've already selected a total for this game.",
 } as const;
-export const SGP_PRICING_UNAVAILABLE = "Same-game pricing is unavailable. These selections are compatible, but our odds feed does not provide a combined SGP quote. You can keep or edit these legs; this combination cannot be submitted without supported pricing.";
+export const HOUSE_PAYOUT_METHOD = "house_decimal_product_v1" as const;
+export const HOUSE_PAYOUT_EXPLANATION = "House payout rule: multiply each leg's decimal odds. This social-game payout is not adjusted for correlation and is not a sportsbook SGP quote.";
+export function pricingMethodLabel(method: string) {
+  return method === HOUSE_PAYOUT_METHOD ? "House payout · decimal product v1"
+    : method === "independent_games" ? "Independent games" : "Legacy estimate";
+}
 
 // Compatibility does not depend on pricing eligibility or other placed wagers.
 export function compatibilityIssue(selections: Selection[]): keyof typeof COMPATIBILITY_MESSAGES | null {
@@ -55,11 +60,9 @@ export function priceParlay(selections: Selection[]) {
   const incompatible = compatibilityError(selections);
   if (incompatible) throw new Error(incompatible);
   if (selections.length < 2 || selections.length > 20) throw new Error("A parlay needs 2 to 20 selections.");
-  if (new Set(selections.map((s) => s.gameId.toLowerCase())).size !== selections.length) {
-    throw new Error(SGP_PRICING_UNAVAILABLE);
-  }
+  const sameGame = new Set(selections.map((s) => s.gameId.toLowerCase())).size !== selections.length;
   const odds = calculateParlayOdds(selections.map((s) => s.odds));
-  return { ...odds, ...calculatePayout(1, odds.decimalOdds), pricingMethod: "independent_games" as const };
+  return { ...odds, ...calculatePayout(1, odds.decimalOdds), pricingMethod: sameGame ? HOUSE_PAYOUT_METHOD : "independent_games" as const };
 }
 export function normalizeResult(result: string | null): "pending" | "win" | "loss" | "push" {
   if (result === "won") return "win";

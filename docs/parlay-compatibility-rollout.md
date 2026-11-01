@@ -1,3 +1,5 @@
+> Pricing policy update: compatible same-game parlays now use the approved social house payout convention. See [social-parlay-payout.md](social-parlay-payout.md) for the final behavior and the single SQL file to apply. The pricing-unavailable discussion below documents the preceding implementation.
+
 # Same-game selection and Insights changes
 
 ## Findings and changes

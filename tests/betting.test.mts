@@ -8,10 +8,10 @@ const ml: Selection = {...a,betType:"Moneyline",line:null,odds:150};
 test("same-team spread/moneyline conflicts in both insertion orders",()=>{
  for(const legs of [[a,ml],[ml,a]]) assert.match(compatibilityError(legs)!,/spread and moneyline from the same game/);
 });
-test("compatible same-game markets remain compatible independently of quote availability",()=>{
+test("compatible same-game markets receive explicitly versioned house payouts",()=>{
  for(const legs of [[a,total],[a,{...total,pick:"Under"}],[ml,total],[ml,{...total,pick:"Under"}]]) {
   assert.equal(compatibilityError(legs),null);
-  assert.throws(()=>priceParlay(legs),/Same-game pricing is unavailable/);
+  assert.equal(priceParlay(legs).pricingMethod,"house_decimal_product_v1");
  }
 });
 test("duplicates and contradictory markets are rejected",()=>{
@@ -49,13 +49,19 @@ test("UUID case variants cannot evade compatibility or same-game pricing", () =>
  const [side,total] = compatiblePairs[0];
  assert.equal(selectionKey(side),selectionKey({...side,gameId:side.gameId.toUpperCase()}));
  assert.equal(compatibilityIssue([side,{...side,gameId:side.gameId.toUpperCase()}]),"duplicate_selection");
- assert.throws(()=>priceParlay([side,{...total,gameId:total.gameId.toUpperCase()}]),/Same-game pricing is unavailable/);
+ assert.equal(priceParlay([side,{...total,gameId:total.gameId.toUpperCase()}]).pricingMethod,"house_decimal_product_v1");
 });
-test("mixed and three-game selections preserve compatibility without inventing SGP prices", () => {
+test("mixed parlays use house rules while three independent games keep their existing method", () => {
  const [side,total] = compatiblePairs[0];
  const second={...side,gameId:"bbbbbbbb-0000-4000-8000-000000000002",sport:"nfl" as const};
  const third={...side,gameId:"cccccccc-0000-4000-8000-000000000003"};
  assert.equal(compatibilityIssue([side,total,second]),null);
- assert.throws(()=>priceParlay([side,total,second]),/Same-game pricing is unavailable/);
+ assert.equal(priceParlay([side,total,second]).pricingMethod,"house_decimal_product_v1");
  assert.ok(priceParlay([side,second,third]).decimalOdds>1);
+});
+
+test("Miami ML -150 plus Over -110 returns 3.18 units for a one-unit house parlay",()=>{
+ const quote=priceParlay([{...ml,pick:"Miami",odds:-150},{...total,odds:-110}]);
+ assert.equal(quote.pricingMethod,"house_decimal_product_v1");
+ assert.equal(quote.totalReturn,3.18);assert.equal(quote.profit,2.18);assert.equal(quote.americanOdds,218);
 });

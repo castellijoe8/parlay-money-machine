@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "./supabase-admin";
-import { compatibilityError, isSelection, UUID, COMPATIBILITY_MESSAGES, SGP_PRICING_UNAVAILABLE } from "./betting";
+import { compatibilityError, isSelection, UUID, COMPATIBILITY_MESSAGES } from "./betting";
 
 const errors: Record<string, string> = {
   ...COMPATIBILITY_MESSAGES,
@@ -9,7 +9,7 @@ const errors: Record<string, string> = {
   invalid_selection: "A selection does not match its game's available markets.",
   invalid_sport: "The selected sport does not match its game.",
   incompatible_selection: "These selections cannot be combined in the same parlay.",
-  sgp_pricing_unavailable: SGP_PRICING_UNAVAILABLE,
+  sgp_pricing_unavailable: "Same-game house payouts require the latest database migration. Your wager was not placed.",
   idempotency_conflict: "This submission key was already used for a different wager. Start a new selection.",
 };
 export async function handleWager(request: Request, parlay: boolean) {

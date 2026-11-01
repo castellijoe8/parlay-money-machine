@@ -40,6 +40,7 @@ before(async () => {
   await db.exec(migration);
   await db.exec(migration); // Reapplication preserves objects and grants.
   await db.exec(await readFile(new URL("../supabase/migrations/20261101010000_parlay_compatibility.sql",import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/20261101020000_social_parlay_payout.sql",import.meta.url),"utf8"));
 });
 beforeEach(async () => {
   await db.exec("truncate public.game_voids,public.parlay_legs,public.parlay_wagers,public.picks,public.games cascade");
@@ -100,10 +101,11 @@ test("SQL rejects duplicate and conflicting legs regardless of ordering", async 
     await expectError(() => parlay(legs), /duplicate_selection|conflicting_side_markets|conflicting_totals|repeated_spread|repeated_moneyline/);
   }
 });
-test("compatible same-game groups fail on pricing, not compatibility", async () => {
+test("compatible same-game and mixed groups persist under house payout rules", async () => {
   for (const legs of [[selection(1,"Spread"),selection(1,"Total")], [selection(),selection(1,"Total","Under")],
     [selection(),selection(1,"Total")], [selection(1,"Spread"),selection(1,"Total","Under"),selection(2)]]) {
-    await expectError(() => parlay(legs), /sgp_pricing_unavailable/);
+    const id=await parlay(legs);
+    assert.equal((await db.query<{pricing_method:string}>("select pricing_method from public.parlay_wagers where id=$1",[id])).rows[0].pricing_method,"house_decimal_product_v1");
   }
 });
 test("all winners settle once and unresolved games never prematurely win", async () => {
@@ -179,12 +181,15 @@ test("reapplying migration preserves existing singles, parent prices and legs", 
   const accepted = await db.query("select accepted_group_prices from public.parlay_wagers where id=$1",[id]);
   await db.exec(await readFile(new URL("../supabase/migrations/20261101000000_complete_wagering.sql",import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../supabase/migrations/20261101010000_parlay_compatibility.sql",import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/20261101020000_social_parlay_payout.sql",import.meta.url),"utf8"));
   assert.deepEqual((await db.query("select * from public.wager_records order by kind,id")).rows,before.rows);
   assert.deepEqual((await db.query("select accepted_group_prices from public.parlay_wagers where id=$1",[id])).rows,accepted.rows);
   const validation = await db.query<Record<string,boolean>>(await readFile(new URL("../supabase/validate-wagering.sql",import.meta.url),"utf8"));
   assert.ok(Object.values(validation.rows[0]).every(value=>value===true));
   const compatibilityValidation=await db.query<Record<string,boolean>>(await readFile(new URL("../supabase/validate-parlay-compatibility.sql",import.meta.url),"utf8"));
   assert.ok(Object.values(compatibilityValidation.rows[0]).every(value=>value===true));
+  const houseValidation=await db.query<Record<string,boolean>>(await readFile(new URL("../supabase/validate-social-parlay-payout.sql",import.meta.url),"utf8"));
+  assert.ok(Object.values(houseValidation.rows[0]).every(value=>value===true));
 });
 test("canceled provider status automatically voids pending legs", async () => {
   const id = await parlay();
@@ -212,11 +217,54 @@ test("opposing-team spread and moneyline cannot bypass direct RPC validation",as
    for(const order of [legs,[...legs].reverse()]) await expectError(()=>parlay(order),/conflicting_side_markets/);
  }
 });
-test("case variants of one UUID cannot obtain an independently multiplied SGP",async()=>{
+test("case variants of one UUID must be labeled as a house payout, not independent games",async()=>{
  const uuid="abcdefab-0000-4000-8000-000000000001";
  await db.query("update public.games set id=$1 where id=$2",[uuid,game(1)]);
  const side={...selection(1,"Spread"),gameId:uuid};
  const total={...selection(1,"Total"),gameId:uuid.toUpperCase()};
- await expectError(()=>parlay([side,total]),/sgp_pricing_unavailable/);
- assert.equal((await db.query<{n:number}>("select count(*)::int n from public.parlay_wagers")).rows[0].n,0);
+ const id=await parlay([side,total]);
+ const saved=(await db.query<{pricing_method:string;potential_return:string}>("select pricing_method,potential_return from public.parlay_wagers where id=$1",[id])).rows[0];
+ assert.equal(saved.pricing_method,"house_decimal_product_v1");assert.equal(Number(saved.potential_return),3.64);
+});
+test("Miami ML -150 plus Over -110 freezes 3.18 return, settles once and counts once",async()=>{
+ await db.query("update public.games set away_team='Miami',moneyline_away=-150 where id=$1",[game(1)]);
+ const legs=[{...selection(),pick:"Miami",odds:-150},selection(1,"Total")];
+ const key=randomUUID(),id=await parlay(legs,key);
+ const saved=(await db.query<{pricing_method:string;potential_return:string;potential_profit:string;stake:string}>("select * from public.parlay_wagers where id=$1",[id])).rows[0];
+ assert.equal(saved.pricing_method,"house_decimal_product_v1");assert.equal(Number(saved.stake),1);
+ assert.equal(Number(saved.potential_return),3.18);assert.equal(Number(saved.potential_profit),2.18);
+ // Settlement must use frozen wager prices, not subsequently updated game odds.
+ await db.query("update public.games set moneyline_away=-300,total_odds_over=-200 where id=$1",[game(1)]);
+ await finish(1,24,21);
+ assert.equal((await row(id)).status,"won");assert.equal(Number((await row(id)).actual_return),3.18);
+ assert.equal(await parlay(legs,key),id);
+ const settled=await row(id);await db.query("select public.settle_parlay_legs($1)",[game(1)]);assert.deepEqual(await row(id),settled);
+ const records=(await db.query<{result:string;units:string}>("select result,units from public.wager_records where id=$1",[id])).rows;
+ assert.equal(records.length,1);assert.equal(records[0].result,"win");assert.equal(Number(records[0].units),2.18);
+});
+test("house same-game payouts accept either side and total for both sports",async()=>{
+ for(const n of [1,2])for(const market of ["Spread","Moneyline"] as const)for(const home of [false,true])for(const totalPick of ["Over","Under"]){
+  const side=selection(n,market,home?`Home${n}`:`Away${n}`);
+  if(home){side.line=market==="Spread"?-3:null;side.odds=market==="Spread"?-110:-160;}
+  const id=await parlay([side,selection(n,"Total",totalPick)]);
+  const saved=(await db.query<{pricing_method:string;potential_return:string}>("select pricing_method,potential_return from public.parlay_wagers where id=$1",[id])).rows[0];
+  assert.equal(saved.pricing_method,"house_decimal_product_v1");
+  assert.equal(Number(saved.potential_return),market==="Spread"?3.64:home?3.10:4.77);
+ }
+});
+test("house push removes only that leg; both legs pushing refund one stake",async()=>{
+ await db.query("update public.games set total=44 where id=$1",[game(1)]);
+ const partial=await parlay([selection(1,"Spread"),{...selection(1,"Total"),line:44}]);
+ await finish(1,24,20);
+ assert.equal((await row(partial)).status,"won");assert.equal(Number((await row(partial)).actual_return),1.91);
+ await db.query("update public.games set total=45 where id=$1",[game(2)]);
+ const refund=await parlay([selection(2,"Spread"),{...selection(2,"Total"),line:45}]);
+ await finish(2,21,24);assert.equal((await row(refund)).status,"push");assert.equal(Number((await row(refund)).actual_return),1);
+});
+test("voiding a same-game group removes both legs from a mixed house payout",async()=>{
+ const id=await parlay([selection(1,"Spread"),selection(1,"Total"),selection(2)]);
+ await voidGame(1);assert.equal((await row(id)).status,"pending");
+ await finish(2);assert.equal((await row(id)).status,"won");assert.equal(Number((await row(id)).actual_return),2.5);
+ const allVoid=await parlay([selection(3),selection(3,"Total")]);await voidGame(3);
+ assert.equal((await row(allVoid)).status,"void");assert.equal(Number((await row(allVoid)).actual_return),1);
 });
