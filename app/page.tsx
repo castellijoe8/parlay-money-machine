@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { DailyEdgePreview } from "@/app/daily-edge-feed";
-import { compatibilityError, priceParlay, selectionKey, isSelection, UUID, type Selection } from "@/lib/betting";
+import { compatibilityError, priceParlay, selectionKey, isSelection, UUID, HOUSE_PAYOUT_EXPLANATION, HOUSE_PAYOUT_METHOD, type Selection } from "@/lib/betting";
 import { placeSingle } from "@/lib/wager-request";
 
 type Sport = "ncaaf" | "nfl";
@@ -1337,8 +1336,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        <DailyEdgePreview />
-
         {/* Games */}
         <section className="mt-5 sm:mt-7">
           <div className="flex items-end justify-between gap-3">
@@ -1722,7 +1719,7 @@ function ParlaySlip({ selections, remove, clear, exit, submit, submitting, messa
     {!selections.length && <p className="py-3 text-sm text-gray-500">Choose at least two selections from the game cards. Your slip stays saved while you browse.</p>}
     {pricingError && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs font-semibold text-amber-900">{pricingError}</p>}
     <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-900 p-3 text-xs text-white sm:grid-cols-4"><div>Combined odds<p className="mt-1 font-extrabold">{quote ? `${quote.americanOdds > 0 ? "+" : ""}${quote.americanOdds}` : "Unavailable"}</p></div><div>Stake<p className="mt-1 font-extrabold">1.00 unit</p></div><div>Potential profit<p className="mt-1 font-extrabold">{quote ? `${quote.profit.toFixed(2)} units` : "—"}</p></div><div>Total return<p className="mt-1 font-extrabold">{quote ? `${quote.totalReturn.toFixed(2)} units` : "—"}</p></div></div>
-    <p className="mt-2 text-[10px] text-gray-500">{quote ? "Pricing: standard multiplication across independent games. Final odds are validated when placed." : "No same-game price is estimated or invented."} Social units only; no money is collected or paid.</p>
+    <p className="mt-2 text-[10px] text-gray-500">{quote ? quote.pricingMethod === HOUSE_PAYOUT_METHOD ? HOUSE_PAYOUT_EXPLANATION : "Pricing: standard multiplication across independent games. Final odds are validated when placed." : "Select at least two compatible legs to calculate a payout."} Social units only; no money is collected or paid.</p>
     <button disabled={submitting || !quote} onClick={submit} className="mt-3 w-full rounded-lg bg-green-600 px-4 py-3 text-xs font-extrabold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Place Parlay · 1 Unit"}</button>
     {message && <p role="status" className="mt-2 text-xs font-semibold text-red-600">{message}</p>}
     </div>

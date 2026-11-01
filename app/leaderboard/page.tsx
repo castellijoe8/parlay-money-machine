@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, type CSSProperties } from "react";
 
 import { supabase } from "@/lib/supabase";
 
 type Pick = {
+  kind: "single" | "parlay";
   user_id: string;
   sports: string[];
   result: string | null;
@@ -30,6 +31,8 @@ type Profile = {
 };
 
 export default function LeaderboardPage() {
+  const requestVersion = useRef(0);
+  const [wagerTypeFilter, setWagerTypeFilter] = useState<"all" | "single" | "parlay">("all");
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -38,19 +41,22 @@ export default function LeaderboardPage() {
   );
 
   async function loadLeaderboard() {
+    const version = ++requestVersion.current;
     setLoading(true);
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
+    if (version !== requestVersion.current) return;
     setCurrentUserId(user?.id ?? null);
 
     const { data: picks, error: picksError } = await supabase
       .from("wager_records")
-      .select("user_id, result, units, created_at, sports")
+      .select("user_id, kind, result, units, created_at, sports")
       .order("created_at", { ascending: true });
 
+    if (version !== requestVersion.current) return;
     if (picksError) {
       console.error("Error loading picks:", picksError);
       setLoading(false);
@@ -72,6 +78,7 @@ export default function LeaderboardPage() {
       .select("id, display_name")
       .in("id", userIds);
 
+    if (version !== requestVersion.current) return;
     if (profilesError) {
       console.error("Error loading profiles:", profilesError);
     }
@@ -89,6 +96,7 @@ export default function LeaderboardPage() {
 
     picks.forEach((pick: Pick) => {
       if (!pick.user_id) return;
+      if (wagerTypeFilter !== "all" && pick.kind !== wagerTypeFilter) return;
 
       if (sportFilter !== "all" && !pick.sports.includes(sportFilter)) return;
 
@@ -191,14 +199,15 @@ export default function LeaderboardPage() {
   }
 
   useEffect(() => {
-    // This effect intentionally loads external Supabase data when the sport filter changes.
+    // Load parent wager records when either filter changes.
     // The data-loading function updates component state as part of that async operation.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadLeaderboard();
+    return () => { requestVersion.current += 1; };
 
-    // The filter is the only input to this data load; the function is recreated per render.
+    // Filters are the inputs to this data load; the function is recreated per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sportFilter]);
+  }, [sportFilter, wagerTypeFilter]);
 
   function getStreakDisplay(player: LeaderboardRow) {
     if (!player.streak || !player.streakType) {
@@ -444,6 +453,11 @@ export default function LeaderboardPage() {
     ]);
   }
 
+  // Shared pixel tracks keep headers and every player's numbers aligned, even
+  // when records grow to three or four digits. Names take the remaining space.
+  const recordColumn = leaderboard.reduce((width, player) => Math.max(width, `${player.wins}–${player.losses}–${player.pushes}`.length * 7), 54);
+  const unitsColumn = leaderboard.reduce((width, player) => Math.max(width, `${player.net_units > 0 ? "+" : ""}${player.net_units.toFixed(2)}u`.length * 7), 58);
+
   return (
     <main className="mx-auto max-w-6xl px-2.5 py-5 sm:px-6 sm:py-10">
       <div className="mb-5 sm:mb-8">
@@ -455,7 +469,7 @@ export default function LeaderboardPage() {
         </p>
       </div>
 
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      <div role="group" aria-label="Sport" className="mb-3 flex gap-2 overflow-x-auto pb-1">
         {[
           ["all", "All"],
           ["nfl", "NFL"],
@@ -463,6 +477,8 @@ export default function LeaderboardPage() {
         ].map(([value, label]) => (
           <button
             key={value}
+            type="button"
+            aria-pressed={sportFilter === value}
             onClick={() =>
               setSportFilter(value as "all" | "nfl" | "ncaaf")
             }
@@ -472,6 +488,15 @@ export default function LeaderboardPage() {
                 : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100"
             }`}
           >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div role="group" aria-label="Wager type" className="mb-5 flex gap-2 overflow-x-auto pb-1">
+        {([ ["all", "All bets"], ["single", "Singles"], ["parlay", "Parlays"] ] as const).map(([value, label]) => (
+          <button key={value} type="button" aria-pressed={wagerTypeFilter === value} onClick={() => setWagerTypeFilter(value)}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition ${wagerTypeFilter === value ? "bg-green-600 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100"}`}>
             {label}
           </button>
         ))}
@@ -487,12 +512,13 @@ export default function LeaderboardPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div data-testid="leaderboard-table" style={{ "--record-column": `${recordColumn}px`, "--units-column": `${unitsColumn}px` } as CSSProperties} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             {/* Header */}
             <div
               className="
                 grid
-                grid-cols-[32px_minmax(0,1fr)_54px_58px]
+                grid-cols-[24px_minmax(0,1fr)_var(--record-column)_var(--units-column)]
+                gap-x-2
                 items-center
                 border-b
                 border-gray-200
@@ -534,9 +560,12 @@ export default function LeaderboardPage() {
               return (
                 <div
                   key={player.user_id}
+                  data-testid="leaderboard-player-row"
+                  data-player-id={player.user_id}
                   className={`
                     grid
-                    grid-cols-[32px_minmax(0,1fr)_54px_58px]
+                    grid-cols-[24px_minmax(0,1fr)_var(--record-column)_var(--units-column)]
+                gap-x-2
                     items-center
                     border-b
                     px-2.5
@@ -610,15 +639,17 @@ export default function LeaderboardPage() {
                     </div>
                   </div>
 
-                  <div className="text-center text-xs font-bold text-gray-700 sm:text-base">
+                  <div data-testid="leaderboard-record" aria-label={`${player.wins} wins, ${player.losses} losses, ${player.pushes} ties`} className="whitespace-nowrap text-center text-[11px] font-bold tabular-nums tracking-tight text-gray-700 sm:text-base sm:tracking-normal">
                     {player.wins}–{player.losses}–{player.pushes}
                   </div>
 
                   {/* Units */}
                   <div
                     className={`
+                      whitespace-nowrap
                       text-center
-                      text-xs
+                      text-[11px]
+                      tabular-nums
                       font-extrabold
                       sm:text-base
                       ${
