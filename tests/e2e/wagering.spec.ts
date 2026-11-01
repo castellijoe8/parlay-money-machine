@@ -1,4 +1,6 @@
 import { test,expect } from "@playwright/test";
+import { incompatibleGroups } from "../fixtures/parlay-compatibility-cases";
+import { COMPATIBILITY_MESSAGES, type Selection } from "../../lib/betting";
 const uid="10000000-0000-4000-8000-000000000001";
 const payload=Buffer.from(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+86400,role:"authenticated"})).toString("base64url");
 const token=`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${payload}.fixture`;
@@ -47,7 +49,7 @@ test("overlapping singles and mixed-game parlay remain independent",async({page,
 test("builder explains incompatible selections and unavailable same-game pricing",async({page})=>{
  await page.getByRole("button",{name:/Build a Parlay/}).click();
  await choose(page,"Spread","Away1");await choose(page,"Moneyline","Away1");
- await expect(page.getByRole("status")).toContainText("cannot be combined");
+ await expect(page.getByRole("status")).toContainText("can't combine a spread and moneyline");
  await choose(page,"Total","Over");
  await expect(page.getByRole("alert").filter({hasText:"Same-game pricing"})).toContainText("Same-game pricing is unavailable");
  await expect(page.getByRole("button",{name:"Place Parlay · 1 Unit",exact:true})).toBeDisabled();
@@ -70,4 +72,49 @@ test("double click produces one single-wager submission",async({page,request})=>
  await page.getByRole("button",{name:"Confirm Wager",exact:true}).evaluate((button:HTMLButtonElement)=>{button.click();button.click();});
  await expect(card(page).getByText(/Your wagers/)).toContainText("1");
  expect(await(await request.get("http://127.0.0.1:54329/__counts")).json()).toEqual([{kind:"single",n:1}]);
+});
+test("compatible same-game legs coexist and can be removed independently on desktop and mobile",async({page})=>{
+ for(const width of [1280,390]) {
+  await page.setViewportSize({width,height:844});
+  await page.getByRole("button",{name:/Build a Parlay/}).click();
+  for(const side of ["Spread","Moneyline"]) for(const total of ["Over","Under"]) {
+   await choose(page,side,"Away1"); await choose(page,"Total",total);
+   await expect(page.getByText("Parlay Builder · 2 selections",{exact:true})).toBeVisible();
+   await expect(page.getByRole("button",{name:`Remove Away1 ${side}`,exact:true})).toBeVisible();
+   await expect(page.getByRole("alert").filter({hasText:"Same-game pricing"})).toContainText("These selections are compatible");
+   await page.getByRole("button",{name:`Remove ${total} Total`,exact:true}).click();
+   await expect(page.getByRole("button",{name:`Remove Away1 ${side}`,exact:true})).toBeVisible();
+   await expect(page.getByText("Parlay Builder · 1 selections",{exact:true})).toBeVisible();
+   await page.getByRole("button",{name:"Clear all",exact:true}).click();
+  }
+  await choose(page,"Spread","Away1"); await choose(page,"Moneyline","Home1");
+  await expect(page.getByRole("status")).toContainText("can't combine a spread and moneyline");
+  await expect(page.getByText("Parlay Builder · 1 selections",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Clear all",exact:true}).click();
+  await page.getByRole("button",{name:"Single wager mode",exact:true}).click();
+ }
+});
+test("invalid direct API requests cannot create conflicting parlay legs",async({request})=>{
+ for(const {legs,code} of incompatibleGroups) for(const order of [legs,[...legs].reverse()]) {
+  const response=await request.post("/api/parlays",{headers:{Authorization:`Bearer ${token}`},data:{idempotencyKey:crypto.randomUUID(),selections:order}});
+  expect(response.status()).toBe(400);
+  expect((await response.json()).error).toBe(COMPATIBILITY_MESSAGES[code as keyof typeof COMPATIBILITY_MESSAGES]);
+ }
+ // A logically valid SGP still needs a genuine quote. Backend must not invent one.
+ const side:Selection={gameId:"20000000-0000-4000-8000-000000000001",sport:"nfl",pick:"Away1",betType:"Spread",line:3,odds:-110};
+ const response=await request.post("/api/parlays",{headers:{Authorization:`Bearer ${token}`},data:{idempotencyKey:crypto.randomUUID(),selections:[side,{...side,pick:"Over",betType:"Total",line:44.5}]}});
+ expect(response.status()).toBe(400);expect((await response.json()).error).toContain("These selections are compatible");
+ expect(await(await request.get("http://127.0.0.1:54329/__counts")).json()).toEqual([]);
+});
+test("Insights is absent from homepage but its dedicated navigation and API remain",async({page})=>{
+ const insightRequests:string[]=[];
+ page.on("request",request=>{if(new URL(request.url()).pathname==="/api/daily-edge")insightRequests.push(request.url());});
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:"Games",exact:true})).toBeVisible();
+ await expect(page.getByRole("heading",{name:"The Daily Edge",exact:true})).toHaveCount(0);
+ expect(insightRequests).toEqual([]);
+ const response=page.waitForResponse(response=>new URL(response.url()).pathname==="/api/daily-edge");
+ await page.getByRole("navigation",{name:"Main navigation",exact:true}).getByRole("link",{name:"Daily Edge",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"The Daily Edge",exact:true})).toBeVisible();
+ expect((await response).status()).toBe(200);
 });

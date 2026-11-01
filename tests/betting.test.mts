@@ -6,7 +6,7 @@ const total: Selection = {...a,pick:"Over",betType:"Total",line:52.5};
 const ml: Selection = {...a,betType:"Moneyline",line:null,odds:150};
 
 test("same-team spread/moneyline conflicts in both insertion orders",()=>{
- for(const legs of [[a,ml],[ml,a]]) assert.match(compatibilityError(legs)!,/Notre Dame spread and Notre Dame moneyline/);
+ for(const legs of [[a,ml],[ml,a]]) assert.match(compatibilityError(legs)!,/spread and moneyline from the same game/);
 });
 test("compatible same-game markets remain compatible independently of quote availability",()=>{
  for(const legs of [[a,total],[a,{...total,pick:"Under"}],[ml,total],[ml,{...total,pick:"Under"}]]) {
@@ -30,4 +30,32 @@ test("each parent maps to one record and net units exclude refunded stake",()=>{
  assert.deepEqual(wagerRecord("lost",1,0),{result:"loss",units:-1});
  assert.deepEqual(wagerRecord("void",1,1),{result:"push",units:0});
  assert.deepEqual(wagerRecord("pending",1,null),{result:"pending",units:0});
+});
+
+// Every rule applies independently of team labels, sport, UUID casing or order.
+import { compatiblePairs, incompatibleGroups } from "./fixtures/parlay-compatibility-cases.ts";
+import { compatibilityIssue, selectionKey } from "../lib/betting.ts";
+test("all side/total pairs are compatible in both orders for NFL and NCAAF", () => {
+ for (const sport of ["nfl", "ncaaf"] as const) for (const legs of compatiblePairs) {
+  for (const order of [legs, [...legs].reverse()]) assert.equal(compatibilityError(order.map((leg) => ({ ...leg, sport }))), null);
+ }
+});
+test("one-side-one-total restrictions match every prohibited combination", () => {
+ for (const {legs,code} of incompatibleGroups) {
+  for (const order of [legs,[...legs].reverse()]) assert.equal(compatibilityIssue(order),code);
+ }
+});
+test("UUID case variants cannot evade compatibility or same-game pricing", () => {
+ const [side,total] = compatiblePairs[0];
+ assert.equal(selectionKey(side),selectionKey({...side,gameId:side.gameId.toUpperCase()}));
+ assert.equal(compatibilityIssue([side,{...side,gameId:side.gameId.toUpperCase()}]),"duplicate_selection");
+ assert.throws(()=>priceParlay([side,{...total,gameId:total.gameId.toUpperCase()}]),/Same-game pricing is unavailable/);
+});
+test("mixed and three-game selections preserve compatibility without inventing SGP prices", () => {
+ const [side,total] = compatiblePairs[0];
+ const second={...side,gameId:"bbbbbbbb-0000-4000-8000-000000000002",sport:"nfl" as const};
+ const third={...side,gameId:"cccccccc-0000-4000-8000-000000000003"};
+ assert.equal(compatibilityIssue([side,total,second]),null);
+ assert.throws(()=>priceParlay([side,total,second]),/Same-game pricing is unavailable/);
+ assert.ok(priceParlay([side,second,third]).decimalOdds>1);
 });

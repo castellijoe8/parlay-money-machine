@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 const db = new PGlite();
 await db.exec(await readFile(new URL("../fixtures/core-schema.sql",import.meta.url),"utf8"));
-for(const migration of ["20261031000000_parlay_wagers.sql","20261101000000_complete_wagering.sql"])
+for(const migration of ["20261031000000_parlay_wagers.sql","20261101000000_complete_wagering.sql","20261101010000_parlay_compatibility.sql"])
   await db.exec(await readFile(new URL(`../../supabase/migrations/${migration}`,import.meta.url),"utf8"));
 const uid="10000000-0000-4000-8000-000000000001";
 async function reset(){

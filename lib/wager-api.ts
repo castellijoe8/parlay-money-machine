@@ -1,15 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "./supabase-admin";
-import { compatibilityError, isSelection, UUID } from "./betting";
+import { compatibilityError, isSelection, UUID, COMPATIBILITY_MESSAGES, SGP_PRICING_UNAVAILABLE } from "./betting";
 
 const errors: Record<string, string> = {
+  ...COMPATIBILITY_MESSAGES,
   price_changed: "Odds or lines changed. Refresh the games and review your selection before trying again.",
   wagering_closed: "Wagering is closed for one or more games.",
   invalid_selection: "A selection does not match its game's available markets.",
   invalid_sport: "The selected sport does not match its game.",
   incompatible_selection: "These selections cannot be combined in the same parlay.",
-  duplicate_selection: "Duplicate selections are not allowed in a parlay.",
-  sgp_pricing_unavailable: "Same-game pricing is unavailable. Our odds feed does not provide a combined SGP quote. Remove a same-game leg or place it as a separate single wager.",
+  sgp_pricing_unavailable: SGP_PRICING_UNAVAILABLE,
   idempotency_conflict: "This submission key was already used for a different wager. Start a new selection.",
 };
 export async function handleWager(request: Request, parlay: boolean) {

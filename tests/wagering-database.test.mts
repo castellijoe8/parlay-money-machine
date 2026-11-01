@@ -39,6 +39,7 @@ before(async () => {
   const migration = await readFile(new URL("../supabase/migrations/20261101000000_complete_wagering.sql", import.meta.url), "utf8");
   await db.exec(migration);
   await db.exec(migration); // Reapplication preserves objects and grants.
+  await db.exec(await readFile(new URL("../supabase/migrations/20261101010000_parlay_compatibility.sql",import.meta.url),"utf8"));
 });
 beforeEach(async () => {
   await db.exec("truncate public.game_voids,public.parlay_legs,public.parlay_wagers,public.picks,public.games cascade");
@@ -96,7 +97,7 @@ test("SQL rejects duplicate and conflicting legs regardless of ordering", async 
   for (const legs of [[selection(), selection()], [selection(1,"Spread"),selection()], [selection(),selection(1,"Spread")],
     [selection(),{...selection(),pick:"Home1",odds:-160}], [selection(1,"Total"),selection(1,"Total","Under")],
     [selection(1,"Spread"),{...selection(1,"Spread"),pick:"Home1",line:-3}]]) {
-    await expectError(() => parlay(legs), /duplicate_selection|incompatible_selection/);
+    await expectError(() => parlay(legs), /duplicate_selection|conflicting_side_markets|conflicting_totals|repeated_spread|repeated_moneyline/);
   }
 });
 test("compatible same-game groups fail on pricing, not compatibility", async () => {
@@ -177,10 +178,13 @@ test("reapplying migration preserves existing singles, parent prices and legs", 
   const before = await db.query("select * from public.wager_records order by kind,id");
   const accepted = await db.query("select accepted_group_prices from public.parlay_wagers where id=$1",[id]);
   await db.exec(await readFile(new URL("../supabase/migrations/20261101000000_complete_wagering.sql",import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/20261101010000_parlay_compatibility.sql",import.meta.url),"utf8"));
   assert.deepEqual((await db.query("select * from public.wager_records order by kind,id")).rows,before.rows);
   assert.deepEqual((await db.query("select accepted_group_prices from public.parlay_wagers where id=$1",[id])).rows,accepted.rows);
   const validation = await db.query<Record<string,boolean>>(await readFile(new URL("../supabase/validate-wagering.sql",import.meta.url),"utf8"));
   assert.ok(Object.values(validation.rows[0]).every(value=>value===true));
+  const compatibilityValidation=await db.query<Record<string,boolean>>(await readFile(new URL("../supabase/validate-parlay-compatibility.sql",import.meta.url),"utf8"));
+  assert.ok(Object.values(compatibilityValidation.rows[0]).every(value=>value===true));
 });
 test("canceled provider status automatically voids pending legs", async () => {
   const id = await parlay();
@@ -189,4 +193,30 @@ test("canceled provider status automatically voids pending legs", async () => {
   await finish(2);
   assert.equal((await row(id)).status,"won");
   assert.equal(Number((await row(id)).actual_return),2.5);
+});
+
+import { compatiblePairs, incompatibleGroups } from "./fixtures/parlay-compatibility-cases.ts";
+import { compatibilityIssue } from "../lib/betting.ts";
+test("SQL and shared frontend/API rules agree on every pair, sport and insertion order",async()=>{
+ for(const sport of ["nfl","ncaaf"] as const) for(const legs of [...compatiblePairs,...incompatibleGroups.map((group)=>group.legs)]) {
+  for(const order of [legs,[...legs].reverse()]) {
+   const selections=order.map((leg)=>({...leg,sport}));
+   const sql=(await db.query<{issue:string|null}>("select public.parlay_compatibility_error($1::jsonb) issue",[JSON.stringify(selections)])).rows[0].issue;
+   assert.equal(sql,compatibilityIssue(selections));
+  }
+ }
+});
+test("opposing-team spread and moneyline cannot bypass direct RPC validation",async()=>{
+ for(const legs of [[selection(1,"Spread"),{...selection(),pick:"Home1",odds:-160}],
+  [{...selection(1,"Spread"),pick:"Home1",line:-3},selection()]]) {
+   for(const order of [legs,[...legs].reverse()]) await expectError(()=>parlay(order),/conflicting_side_markets/);
+ }
+});
+test("case variants of one UUID cannot obtain an independently multiplied SGP",async()=>{
+ const uuid="abcdefab-0000-4000-8000-000000000001";
+ await db.query("update public.games set id=$1 where id=$2",[uuid,game(1)]);
+ const side={...selection(1,"Spread"),gameId:uuid};
+ const total={...selection(1,"Total"),gameId:uuid.toUpperCase()};
+ await expectError(()=>parlay([side,total]),/sgp_pricing_unavailable/);
+ assert.equal((await db.query<{n:number}>("select count(*)::int n from public.parlay_wagers")).rows[0].n,0);
 });

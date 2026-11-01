@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { DailyEdgePreview } from "@/app/daily-edge-feed";
 import { compatibilityError, priceParlay, selectionKey, isSelection, UUID, type Selection } from "@/lib/betting";
 import { placeSingle } from "@/lib/wager-request";
 
@@ -1336,8 +1335,6 @@ export default function HomePage() {
             </div>
           </div>
         </section>
-
-        <DailyEdgePreview />
 
         {/* Games */}
         <section className="mt-5 sm:mt-7">
