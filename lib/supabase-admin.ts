@@ -6,5 +6,5 @@ export function createSupabaseAdminClient() {
 
   if (!url || !secretKey) return null;
 
-  return createClient(url, secretKey);
+  return createClient(url, secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
 }

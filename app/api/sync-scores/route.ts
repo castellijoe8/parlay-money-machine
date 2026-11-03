@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authorizeCron } from "@/lib/cron-auth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SPORT_API_CONFIG, SPORTS, type SupportedSport } from "@/lib/sports";
 import { getSyncMinimumIntervalMinutes, isSyncDue } from "@/lib/sync-schedule";
@@ -65,7 +66,9 @@ async function syncSportScores(supabase: SupabaseClient, sport: SupportedSport, 
   return { games_found: games.length, games_updated: updated, live_games: liveGames, games_scored: gamesScored, games_not_in_database: gamesNotInDatabase };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = authorizeCron(request);
+  if (denied) return denied;
   const supabase = createSupabaseAdminClient();
   if (!supabase) {
     return NextResponse.json(

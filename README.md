@@ -1,3 +1,9 @@
+For the approved social-unit parlay payout convention and latest SQL rollout, see [docs/social-parlay-payout.md](docs/social-parlay-payout.md).
+
+For the parlay feature, tested behavior, and exact database rollout steps, see [docs/parlay-rollout.md](docs/parlay-rollout.md).
+
+For this app's Supabase, API credentials, authentication, and Vercel setup, see [SETUP.md](SETUP.md).
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

@@ -173,3 +173,13 @@ main > div > section, main > div > .rounded-xl, main > div > .rounded-2xl { bord
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Compact navigation between phone and full desktop widths. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .sportsbook-header-inner { padding: 0 16px; gap: 12px; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .sportsbook-nav { justify-content: center; gap: 0; }
+  .sportsbook-nav a { padding-left: 10px; padding-right: 10px; font-size: 12px; white-space: nowrap; }
+  .sportsbook-account { gap: 8px; }
+  .sportsbook-account .account-name { display: none; }
+  .sportsbook-account .sign-out-button { font-size: 11px; white-space: nowrap; }
+}

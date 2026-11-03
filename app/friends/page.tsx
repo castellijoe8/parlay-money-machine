@@ -18,7 +18,9 @@ type Game = {
 
 type FriendWager = {
   id: string;
-  game_id: string;
+  kind: "single" | "parlay";
+  sports: string[];
+  game_id: string | null;
   user_id: string;
   user_name: string | null;
   pick: string;
@@ -158,7 +160,7 @@ function calculateStats(wagers: FriendWager[]): PlayerStats {
 }
 
 function areOpposite(theirPick: FriendWager, yourPick: FriendWager) {
-  if (theirPick.game_id !== yourPick.game_id) {
+  if (!theirPick.game_id || !yourPick.game_id || theirPick.game_id !== yourPick.game_id) {
     return false;
   }
 
@@ -247,9 +249,9 @@ export default function FriendsWagersPage() {
       const [{ data: authData }, { data, error }] = await Promise.all([
         supabase.auth.getUser(),
         supabase
-          .from("picks")
+          .from("wager_records")
           .select(
-            "id, game_id, user_id, user_name, pick, bet_type, line, odds, result, units, created_at, game:games (id, away_team, home_team, starts_at, sport)"
+            "id, kind, sports, game_id, user_id, user_name, pick, bet_type, line, odds, result, units, created_at, game"
           )
           .order("created_at", { ascending: false }),
       ]);
@@ -333,14 +335,12 @@ export default function FriendsWagersPage() {
   const visibleWagers = useMemo(
     () =>
       wagers.filter((wager) => {
-        const game = gameFor(wager);
-
         const playerMatches =
           selectedPlayerId === "all" ||
           wager.user_id === selectedPlayerId;
 
         const sportMatches =
-          sportFilter === "all" || game?.sport === sportFilter;
+          sportFilter === "all" || wager.sports.includes(sportFilter);
 
         return playerMatches && sportMatches;
       }),
@@ -353,10 +353,10 @@ export default function FriendsWagersPage() {
         ? null
         : calculateStats(
             wagers.filter(
-              (wager) => wager.user_id === selectedPlayerId
+              (wager) => wager.user_id === selectedPlayerId && (sportFilter === "all" || wager.sports.includes(sportFilter))
             )
           ),
-    [wagers, selectedPlayerId]
+    [wagers, selectedPlayerId, sportFilter]
   );
 
   const yourPicks = useMemo(
