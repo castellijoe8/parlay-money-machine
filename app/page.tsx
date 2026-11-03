@@ -1,5 +1,6 @@
 "use client";
 
+import { wagerMatchup } from "@/lib/wager-matchup";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -1607,6 +1608,10 @@ export default function HomePage() {
                   </span>
                 </div>
 
+                <p className="mt-1 break-words text-xs font-medium text-gray-700">
+                  {wagerMatchup(selectedBet.game)}
+                </p>
+
                 <div className="mt-1 flex items-center gap-2">
                   <p className="truncate text-sm font-extrabold text-gray-900 sm:text-base">
                     {
@@ -1634,17 +1639,7 @@ export default function HomePage() {
                   </span>
                 </div>
 
-                <p className="truncate text-[10px] font-medium text-gray-400">
-                  {
-                    selectedBet.game
-                      .away_team
-                  }{" "}
-                  vs.{" "}
-                  {
-                    selectedBet.game
-                      .home_team
-                  }
-                </p>
+
 
                 {wagerMessage ? (
                   <p className="mt-1 text-[10px] font-bold text-red-600">
@@ -1715,7 +1710,7 @@ function ParlaySlip({ selections, remove, clear, exit, submit, submitting, messa
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-extrabold text-gray-900">Parlay Builder · {selections.length} selections</p><p className="text-xs text-gray-500">NFL and college football · fixed 1-unit stake</p></div><div className="flex gap-2"><button onClick={refresh} disabled={submitting || !selections.length} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40">Refresh odds</button><button onClick={clear} disabled={submitting || !selections.length} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40">Clear all</button><button disabled={submitting} onClick={exit} className="rounded-lg px-3 py-2 text-xs font-bold text-gray-600">Single wager mode</button></div></div>
     <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="mt-2 rounded-lg border px-3 py-2 text-xs font-bold text-green-800">{expanded ? "Minimize slip" : `Expand slip · ${selections.length} selections`}</button>
     <div hidden={!expanded}>
-    {[...groups].map(([gameId, legs]) => <section key={gameId} className="mt-3 rounded-xl bg-gray-50 p-2.5"><p className="text-[10px] font-bold text-gray-500">{legs[0].game.sport?.toUpperCase()} · {legs[0].game.away_team} vs. {legs[0].game.home_team}</p>{legs.map((leg) => <div key={betOptionKey(leg)} className="mt-1 flex items-center justify-between gap-2"><p className="text-xs font-bold text-gray-900">{leg.pick} · {leg.betType} {leg.betType === "Moneyline" ? "" : leg.line} · {leg.odds && leg.odds > 0 ? "+" : ""}{leg.odds ?? "—"}</p><button disabled={submitting} aria-label={`Remove ${leg.pick} ${leg.betType}`} onClick={() => remove(betOptionKey(leg))} className="px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>)}</section>)}
+    {[...groups].map(([gameId, legs]) => <section key={gameId} className="mt-3 rounded-xl bg-gray-50 p-2.5"><p className="break-words text-xs font-medium text-gray-700">{wagerMatchup(legs[0].game)}</p>{legs.map((leg) => <div key={betOptionKey(leg)} className="mt-1 flex items-center justify-between gap-2"><p className="text-xs font-bold text-gray-900">{leg.pick} · {leg.betType} {leg.betType === "Moneyline" ? "" : leg.line} · {leg.odds && leg.odds > 0 ? "+" : ""}{leg.odds ?? "—"}</p><button disabled={submitting} aria-label={`Remove ${leg.pick} ${leg.betType}`} onClick={() => remove(betOptionKey(leg))} className="px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>)}</section>)}
     {!selections.length && <p className="py-3 text-sm text-gray-500">Choose at least two selections from the game cards. Your slip stays saved while you browse.</p>}
     {pricingError && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs font-semibold text-amber-900">{pricingError}</p>}
     <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-900 p-3 text-xs text-white sm:grid-cols-4"><div>Combined odds<p className="mt-1 font-extrabold">{quote ? `${quote.americanOdds > 0 ? "+" : ""}${quote.americanOdds}` : "Unavailable"}</p></div><div>Stake<p className="mt-1 font-extrabold">1.00 unit</p></div><div>Potential profit<p className="mt-1 font-extrabold">{quote ? `${quote.profit.toFixed(2)} units` : "—"}</p></div><div>Total return<p className="mt-1 font-extrabold">{quote ? `${quote.totalReturn.toFixed(2)} units` : "—"}</p></div></div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { wagerMatchup } from "@/lib/wager-matchup";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -197,9 +198,44 @@ function areOpposite(theirPick: FriendWager, yourPick: FriendWager) {
   return false;
 }
 
+type FriendParlay = {
+  id: string;
+  user_id: string;
+  user_name: string;
+  status: string;
+  legs: {
+    id: string;
+    market: string;
+    selection: string;
+    line: number | null;
+    odds: number;
+    result: string;
+    game: Parameters<typeof wagerMatchup>[0];
+  }[];
+};
+
+function parlayLegLabel(leg: FriendParlay["legs"][number]) {
+  if (leg.market === "Moneyline") return `${leg.selection} ML`;
+  return `${leg.selection} ${leg.market === "Spread" ? formatOdds(leg.line) : leg.line ?? "—"}`;
+}
+
 export default function FriendsWagersPage() {
-  const [wagers, setWagers] = useState<FriendWager[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [parlays, setParlays] = useState<FriendParlay[]>([]);
+  const [parlayError, setParlayError] = useState(false);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let active = true;
+    void supabase.rpc("friends_parlays").then(({ data, error }) => {
+      if (!active) return;
+      setParlayError(Boolean(error));
+      setParlays((data ?? []) as FriendParlay[]);
+    });
+    return () => { active = false; };
+  }, [currentUserId]);
+
+  const [wagers, setWagers] = useState<FriendWager[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [selectedPlayerId, setSelectedPlayerId] = useState("all");
@@ -528,10 +564,8 @@ export default function FriendsWagersPage() {
                             {wager.user_name}
                           </p>
 
-                          <p className="mt-1 truncate text-sm text-gray-500">
-                            {game?.away_team && game?.home_team
-                              ? `${game.away_team} @ ${game.home_team}`
-                              : wager.kind === "parlay" ? `Parlay · ${wager.sports.map((sport) => sport.toUpperCase()).join(" + ")}` : "Game details unavailable"}
+                          <p className="mt-1 break-words text-sm font-medium text-gray-700">
+                            {wagerMatchup(game)}
                           </p>
 
                           <p className="mt-2 text-xl font-black text-gray-950 sm:text-2xl">
@@ -603,6 +637,30 @@ export default function FriendsWagersPage() {
               })}
             </div>
           )}
+        </section>
+        <section className="mt-6 space-y-3" aria-label="Friends parlays">
+          <h2 className="text-lg font-bold">Recent parlays</h2>
+          {parlayError && <p role="alert">Unable to load parlays.</p>}
+          {parlays.filter((parlay) => selectedPlayerId === "all" || parlay.user_id === selectedPlayerId).map((parlay) => (
+            <details key={parlay.id} className="rounded-xl border bg-white p-4">
+              <summary className="cursor-pointer">
+                <span className="font-bold">{parlay.user_name} · {parlay.status}</span>
+                <span className="mt-1 block break-words text-sm">
+                  {parlay.legs.map((leg) => leg.market === "Total"
+                    ? `${wagerMatchup(leg.game)}: ${parlayLegLabel(leg)} (${formatOdds(leg.odds)})`
+                    : parlayLegLabel(leg)).join(" · ")}
+                </span>
+              </summary>
+              <ul className="mt-3 space-y-2">
+                {parlay.legs.map((leg) => (
+                  <li key={leg.id} className="break-words rounded-lg bg-gray-50 p-2 text-sm">
+                    <p className="font-medium">{wagerMatchup(leg.game)}</p>
+                    <p><strong>{parlayLegLabel(leg)}</strong> <span className="text-gray-600">({formatOdds(leg.odds)}) · {leg.result}</span></p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ))}
         </section>
       </div>
     </main>
