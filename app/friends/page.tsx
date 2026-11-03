@@ -319,6 +319,7 @@ export default function FriendsWagersPage() {
   const players = useMemo<Player[]>(() => {
     const names = new Map<string, string>();
 
+    parlays.forEach((parlay) => names.set(parlay.user_id, parlay.user_name || "Player"));
     wagers.forEach((wager) => {
       names.set(wager.user_id, wager.user_name || "Player");
     });
@@ -326,7 +327,11 @@ export default function FriendsWagersPage() {
     return [...names.entries()]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [wagers]);
+  }, [wagers, parlays]);
+
+  const visibleParlays = parlays.filter(
+    (parlay) => selectedPlayerId === "all" || parlay.user_id === selectedPlayerId
+  );
 
   const selectedPlayer = players.find(
     (player) => player.id === selectedPlayerId
@@ -435,6 +440,31 @@ export default function FriendsWagersPage() {
               </select>
             </label>
           </div>
+        </section>
+        <section className="mt-6 space-y-3" aria-label="Friends parlays">
+          <h2 className="text-lg font-bold">Parlays</h2>
+          {parlayError && <p role="alert">Unable to load parlays.</p>}
+          {!loading && !parlayError && visibleParlays.length === 0 && <p className="text-sm text-gray-600">No recent parlays for this player.</p>}
+          {visibleParlays.map((parlay) => (
+            <details open key={parlay.id} className="rounded-xl border bg-white p-4">
+              <summary className="cursor-pointer">
+                <span className="font-bold">{parlay.user_name} · {parlay.status}</span>
+                <span className="mt-1 block break-words text-sm">
+                  {parlay.legs.map((leg) => leg.market === "Total"
+                    ? `${wagerMatchup(leg.game)}: ${parlayLegLabel(leg)} (${formatOdds(leg.odds)})`
+                    : parlayLegLabel(leg)).join(" · ")}
+                </span>
+              </summary>
+              <ul className="mt-3 space-y-2">
+                {parlay.legs.map((leg) => (
+                  <li key={leg.id} className="break-words rounded-lg bg-gray-50 p-2 text-sm">
+                    <p className="font-medium">{wagerMatchup(leg.game)}</p>
+                    <p><strong>{parlayLegLabel(leg)}</strong> <span className="text-gray-600">({formatOdds(leg.odds)}) · {leg.result}</span></p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ))}
         </section>
 
         {selectedPlayerStats && (
@@ -637,30 +667,6 @@ export default function FriendsWagersPage() {
               })}
             </div>
           )}
-        </section>
-        <section className="mt-6 space-y-3" aria-label="Friends parlays">
-          <h2 className="text-lg font-bold">Recent parlays</h2>
-          {parlayError && <p role="alert">Unable to load parlays.</p>}
-          {parlays.filter((parlay) => selectedPlayerId === "all" || parlay.user_id === selectedPlayerId).map((parlay) => (
-            <details key={parlay.id} className="rounded-xl border bg-white p-4">
-              <summary className="cursor-pointer">
-                <span className="font-bold">{parlay.user_name} · {parlay.status}</span>
-                <span className="mt-1 block break-words text-sm">
-                  {parlay.legs.map((leg) => leg.market === "Total"
-                    ? `${wagerMatchup(leg.game)}: ${parlayLegLabel(leg)} (${formatOdds(leg.odds)})`
-                    : parlayLegLabel(leg)).join(" · ")}
-                </span>
-              </summary>
-              <ul className="mt-3 space-y-2">
-                {parlay.legs.map((leg) => (
-                  <li key={leg.id} className="break-words rounded-lg bg-gray-50 p-2 text-sm">
-                    <p className="font-medium">{wagerMatchup(leg.game)}</p>
-                    <p><strong>{parlayLegLabel(leg)}</strong> <span className="text-gray-600">({formatOdds(leg.odds)}) · {leg.result}</span></p>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
         </section>
       </div>
     </main>
