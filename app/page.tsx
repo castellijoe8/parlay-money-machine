@@ -1,5 +1,6 @@
 "use client";
 
+import { wagerMatchup } from "@/lib/wager-matchup";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -2109,6 +2110,10 @@ export default function HomePage() {
                   </span>
                 </div>
 
+                <p className="mt-1 break-words text-xs font-medium text-gray-700">
+                  {wagerMatchup(selectedBet.game)}
+                </p>
+
                 <div className="mt-1 flex items-center gap-2">
                   <p className="truncate text-sm font-extrabold text-gray-900 sm:text-base">
                     {
@@ -2136,17 +2141,7 @@ export default function HomePage() {
                   </span>
                 </div>
 
-                <p className="truncate text-[10px] font-medium text-gray-400">
-                  {
-                    selectedBet.game
-                      .away_team
-                  }{" "}
-                  vs.{" "}
-                  {
-                    selectedBet.game
-                      .home_team
-                  }
-                </p>
+
 
                 {wagerMessage ? (
                   <p className="mt-1 text-[10px] font-bold text-red-600">
@@ -2211,7 +2206,7 @@ function ParlaySlip({ selections, remove, clear, exit, submit, submitting, messa
   }
   return <div className="fixed inset-x-0 bottom-0 z-50 max-h-[78vh] overflow-y-auto border-t border-gray-200 bg-white/98 shadow-2xl backdrop-blur"><div className="mx-auto max-w-5xl px-3 py-3 sm:px-6 sm:py-4">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-extrabold text-gray-900">Parlay Builder <span className="text-green-700">· {selections.length} selections</span></p><p className="text-xs text-gray-500">NFL and college football · fixed 1-unit stake</p></div><div className="flex gap-2"><button onClick={clear} disabled={!selections.length} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40">Clear all</button><button onClick={exit} className="rounded-lg px-3 py-2 text-xs font-bold text-gray-600">Single wager mode</button></div></div>
-    {selections.length ? <div className="mt-3 space-y-2">{selections.map((leg) => <div key={betOptionKey(leg)} className="flex items-center justify-between gap-2 rounded-xl bg-gray-50 p-2.5"><div className="min-w-0"><p className="truncate text-xs font-bold text-gray-900">{leg.pick} {leg.betType === "Moneyline" ? "ML" : leg.line === null ? "" : leg.betType === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.odds && leg.odds > 0 ? "+" : ""}{leg.odds ?? "—"}</span></p><p className="truncate text-[10px] text-gray-500">{leg.game.sport?.toUpperCase()} · {leg.game.away_team} vs. {leg.game.home_team} · {leg.betType}</p></div><button aria-label={`Remove ${leg.pick} ${leg.betType}`} onClick={() => remove(betOptionKey(leg))} className="rounded-md px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>)}</div> : <p className="py-3 text-sm text-gray-500">Choose at least two outcomes. You can combine separate markets from the same game; your selections stay saved while you browse.</p>}
+    {selections.length ? <div className="mt-3 space-y-2">{selections.map((leg) => <div key={betOptionKey(leg)} className="flex items-center justify-between gap-2 rounded-xl bg-gray-50 p-2.5"><div className="min-w-0"><p className="break-words font-medium">{wagerMatchup(leg.game)}</p><p className="text-xs font-bold text-gray-900">{leg.pick} {leg.betType === "Moneyline" ? "ML" : leg.line === null ? "" : leg.betType === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="font-normal text-gray-600">{leg.odds && leg.odds > 0 ? "+" : ""}{leg.odds ?? "—"}</span></p></div><button aria-label={`Remove ${leg.pick} ${leg.betType}`} onClick={() => remove(betOptionKey(leg))} className="rounded-md px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>)}</div> : <p className="py-3 text-sm text-gray-500">Choose at least two outcomes. You can combine separate markets from the same game; your selections stay saved while you browse.</p>}
     {selections.length >= 2 && <><div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-900 p-3 text-white sm:grid-cols-3"><div><p className="text-[10px] text-gray-300">{sameGameCombination ? "ESTIMATED COMBINED ODDS" : "COMBINED ODDS"}</p><p className="font-extrabold">{combined ? `${combined.americanOdds > 0 ? "+" : ""}${combined.americanOdds}` : "—"} {combined && <span className="text-xs font-medium text-gray-300">({combined.decimalOdds.toFixed(3)})</span>}</p></div><div><p className="text-[10px] text-gray-300">STAKE · FIXED</p><p className="font-extrabold">1.00 unit</p></div><div><p className="text-[10px] text-gray-300">POTENTIAL PROFIT</p><p className="font-extrabold">{payout ? `${payout.profit.toFixed(2)} units` : "—"}</p></div><div><p className="text-[10px] text-gray-300">TOTAL RETURN</p><p className="font-extrabold">{payout ? `${payout.totalReturn.toFixed(2)} units` : "—"}</p></div><div className="col-span-2 flex sm:col-span-3"><button disabled={submitting || !payout} onClick={submit} className="ml-auto rounded-lg bg-green-500 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Place Parlay · 1 Unit"}</button></div></div><p className="mt-2 text-[10px] text-gray-500">Social units only; no money is collected or paid. {sameGameCombination ? "Same-game odds are an independent-leg estimate, not a provider-priced SGP; correlated outcomes may make the true combined price different." : "Odds combine the listed prices across independent games."}</p></>}
     {message && <p role="status" className="mt-2 text-xs font-semibold text-red-600">{message}</p>}
   </div></div>;
