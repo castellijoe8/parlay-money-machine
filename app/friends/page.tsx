@@ -329,10 +329,6 @@ export default function FriendsWagersPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [wagers, parlays]);
 
-  const visibleParlays = parlays.filter(
-    (parlay) => selectedPlayerId === "all" || parlay.user_id === selectedPlayerId
-  );
-
   const selectedPlayer = players.find(
     (player) => player.id === selectedPlayerId
   );
@@ -441,31 +437,7 @@ export default function FriendsWagersPage() {
             </label>
           </div>
         </section>
-        <section className="mt-6 space-y-3" aria-label="Friends parlays">
-          <h2 className="text-lg font-bold">Parlays</h2>
-          {parlayError && <p role="alert">Unable to load parlays.</p>}
-          {!loading && !parlayError && visibleParlays.length === 0 && <p className="text-sm text-gray-600">No recent parlays for this player.</p>}
-          {visibleParlays.map((parlay) => (
-            <details open key={parlay.id} className="rounded-xl border bg-white p-4">
-              <summary className="cursor-pointer">
-                <span className="font-bold">{parlay.user_name} · {parlay.status}</span>
-                <span className="mt-1 block break-words text-sm">
-                  {parlay.legs.map((leg) => leg.market === "Total"
-                    ? `${wagerMatchup(leg.game)}: ${parlayLegLabel(leg)} (${formatOdds(leg.odds)})`
-                    : parlayLegLabel(leg)).join(" · ")}
-                </span>
-              </summary>
-              <ul className="mt-3 space-y-2">
-                {parlay.legs.map((leg) => (
-                  <li key={leg.id} className="break-words rounded-lg bg-gray-50 p-2 text-sm">
-                    <p className="font-medium">{wagerMatchup(leg.game)}</p>
-                    <p><strong>{parlayLegLabel(leg)}</strong> <span className="text-gray-600">({formatOdds(leg.odds)}) · {leg.result}</span></p>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
-        </section>
+
 
         {selectedPlayerStats && (
           <section className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#18453B]/15 bg-[#18453B]/10 sm:grid-cols-5">
@@ -598,6 +570,15 @@ export default function FriendsWagersPage() {
                             {wagerMatchup(game)}
                           </p>
 
+                          {wager.kind === "parlay" && (() => {
+                            const parlay = parlays.find((item) => item.id === wager.id);
+                            return parlay ? <ul className="mt-3 space-y-2">
+                              {parlay.legs.map((leg) => <li key={leg.id} className="break-words border-t pt-2 text-sm">
+                                <p className="font-medium">{wagerMatchup(leg.game)}</p>
+                                <p><strong>{parlayLegLabel(leg)}</strong> ({formatOdds(leg.odds)}) · {leg.result}</p>
+                              </li>)}
+                            </ul> : <p className="mt-2 text-sm text-gray-500">{parlayError ? "Unable to load parlay selections." : "Loading selections…"}</p>;
+                          })()}
                           <p className="mt-2 text-xl font-black text-gray-950 sm:text-2xl">
                             {formatPick(wager)}
                           </p>
