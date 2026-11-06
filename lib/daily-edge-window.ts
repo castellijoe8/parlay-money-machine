@@ -51,10 +51,10 @@ function pacificMidnightUtc(year: number, month: number, day: number) {
   return new Date(candidate);
 }
 
-export function getPacificWeekWindow(now = new Date()): WeeklyWindow {
+export function getPacificWeekWindow(now = new Date(), startDay: 1 | 2 = 1): WeeklyWindow {
   const parts = partsMap(pacificDateParts, now);
   const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
-  const mondayOffset = (weekday + 6) % 7;
+  const mondayOffset = (weekday + 7 - startDay) % 7;
   const pacificCalendarDate = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day) - mondayOffset));
   const year = pacificCalendarDate.getUTCFullYear();
   const month = pacificCalendarDate.getUTCMonth() + 1;
