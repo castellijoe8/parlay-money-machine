@@ -359,56 +359,18 @@ export default function WagersPage() {
     return (sortOption === "oldest" ? 1 : -1) * (Date.parse(a.created_at) - Date.parse(b.created_at));
   }), [parlays, matchesTimeFilter, matchesResultFilter, betTypeFilter, sportFilter, sortOption]);
 
-  const filteredPending = useMemo(
-    () =>
-      filteredWagers.filter(
-        (wager) =>
-          !wager.result ||
-          wager.result.toLowerCase() === "pending"
-      ),
-    [filteredWagers]
-  );
-
-  const filteredCompleted = useMemo(
-    () =>
-      filteredWagers.filter(
-        (wager) =>
-          wager.result &&
-          wager.result.toLowerCase() !== "pending"
-      ),
-    [filteredWagers]
-  );
-
-  const sortedCompletedWagers = useMemo(() => {
-    const sorted = [...filteredCompleted];
-
-    switch (sortOption) {
-      case "oldest":
-        return sorted.sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime()
-        );
-
-      case "biggest-win":
-        return sorted.sort(
-          (a, b) => (b.units ?? 0) - (a.units ?? 0)
-        );
-
-      case "biggest-loss":
-        return sorted.sort(
-          (a, b) => (a.units ?? 0) - (b.units ?? 0)
-        );
-
-      case "newest":
-      default:
-        return sorted.sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime()
-        );
+  const orderedBets = [
+    ...filteredWagers.map((value) => ({ kind: "single" as const, value })),
+    ...filteredParlays.map((value) => ({ kind: "parlay" as const, value })),
+  ].sort((a, b) => {
+    if (sortOption === "newest" || sortOption === "oldest") {
+      return (sortOption === "oldest" ? 1 : -1) * (Date.parse(a.value.created_at) - Date.parse(b.value.created_at));
     }
-  }, [filteredCompleted, sortOption]);
+    const net = (bet: typeof a) => bet.kind === "single"
+      ? Number(bet.value.units ?? 0)
+      : Number(bet.value.actual_return ?? bet.value.stake) - Number(bet.value.stake);
+    return sortOption === "biggest-win" ? net(b) - net(a) : net(a) - net(b);
+  });
 
   function formatDate(dateString: string | null) {
     if (!dateString) return "Date unavailable";
@@ -419,19 +381,6 @@ export default function WagersPage() {
       month: "short",
       day: "numeric",
       year: "numeric",
-    });
-  }
-
-  function formatGameDate(dateString: string | null) {
-    if (!dateString) return "";
-
-    const date = new Date(dateString);
-
-    return date.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
     });
   }
 
@@ -831,134 +780,23 @@ export default function WagersPage() {
         </div>
       ) : (
         <>
-          {filteredParlays.length > 0 && <section className="mb-8"><h2 className="mb-3 text-lg font-black">Parlays <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">{filteredParlays.length}</span></h2><div className="space-y-3">{filteredParlays.map((parlay) => <details key={parlay.id} className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm"><summary className="cursor-pointer list-none"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-green-100 px-2 py-1 text-[10px] font-black uppercase text-green-800">Parlay · {parlay.legs.length} legs</span>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <span className="ml-2 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">{parlay.pricing_method === HOUSE_PAYOUT_METHOD ? "House payout" : "Legacy SGP estimate"}</span>}<p className="mt-2 text-[10px] text-gray-500">Pricing: {pricingMethodLabel(parlay.pricing_method)}</p><p className="mt-2 text-sm font-extrabold">Combined odds {parlay.combined_american_odds > 0 ? "+" : ""}{parlay.combined_american_odds}</p><p className="text-xs text-gray-500">{new Date(parlay.created_at).toLocaleString()} · {Number(parlay.stake).toFixed(2)} units staked</p></div><div className="text-right"><p className="text-sm font-black uppercase">{parlay.status}</p><p className="text-xs text-gray-500">{parlay.actual_return !== null ? `Return ${Number(parlay.actual_return).toFixed(2)} units` : `Potential return ${Number(parlay.potential_return).toFixed(2)} units`}</p><p className="text-xs text-gray-500">Potential profit {Number(parlay.potential_profit).toFixed(2)} units</p></div></div>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <p className="mt-2 text-xs text-amber-800">{parlay.pricing_method === HOUSE_PAYOUT_METHOD ? HOUSE_PAYOUT_EXPLANATION : "Historical wager: accepted under the previous independent-leg estimate; original accepted prices are preserved."}</p>}<p className="mt-2 break-words text-xs font-medium">{parlay.legs.map((leg) => leg.market === "Total" ? `${wagerMatchup(leg.game)}: ${leg.selection} ${leg.line ?? "—"} (${leg.american_odds > 0 ? "+" : ""}${leg.american_odds})` : `${leg.selection} ${leg.market === "Moneyline" ? "ML" : leg.line ?? ""}`).join(" · ")}</p></summary><div className="mt-3"><button onClick={() => void shareParlay(parlay.id)} className="rounded-lg border px-3 py-2 text-xs font-bold">{shareLinks[parlay.id] ? "Copy share link" : "Share parlay"}</button>{shareLinks[parlay.id] && <a href={shareLinks[parlay.id]} className="ml-2 break-all text-xs text-green-700">{shareLinks[parlay.id]}</a>}</div><div className="mt-3 space-y-2 border-t pt-3">{parlay.legs.map((leg) => <div key={leg.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-gray-50 p-2.5 text-xs"><div><p className="break-words font-medium">{wagerMatchup(leg.game)}</p><p className="font-bold">{leg.selection} {leg.market === "Moneyline" ? "ML" : leg.line === null ? "" : leg.market === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.american_odds > 0 ? "+" : ""}{leg.american_odds}</span></p></div><span className="font-bold uppercase">{leg.result}{leg.game?.status === "live" ? " · live" : ""}</span></div>)}</div></details>)}</div><p className="mt-2 text-xs text-gray-500">Parlay wagers use social units only. No money is collected or paid.</p></section>}
-          {/* Pending Bets */}
-          {filteredPending.length > 0 && (
-            <section className="mb-8">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-black">
-                    Pending
-                  </h2>
-
-                  <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">
-                    {filteredPending.length}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {filteredPending.map((wager) => (
-                  <div
-                    key={wager.id}
-                    className={`rounded-2xl border bg-white p-4 shadow-sm ${resultClass(
-                      wager.result
-                    )}`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="text-base font-black">
-                          {wager.pick}
-                        </div>
-
-                        <div className="mt-1 text-sm font-semibold text-gray-700">
-                          {gameName(wager)}
-                        </div>
-
-                        {wager.game?.sport && (
-                          <span className="mt-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">
-                            {wager.game.sport}
-                          </span>
-                        )}
-
-                        <div className="mt-1 text-xs text-gray-400">
-                          {wager.game?.starts_at
-                            ? formatGameDate(
-                                wager.game.starts_at
-                              )
-                            : formatDate(wager.created_at)}
-                        </div>
-
-                        {wagerDetails(wager) && (
-                          <div className="mt-2 text-xs font-medium text-gray-500">
-                            {wagerDetails(wager)}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex shrink-0 flex-col items-end gap-2">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-black ${resultBadgeClass(
-                            wager.result
-                          )}`}
-                        >
-                          PENDING
-                        </span>
-
-                        <span className="text-xs font-semibold text-gray-400">
-                          Risk: 1.00u
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Completed Bets */}
-          <section>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black">
-                  Completed
-                </h2>
-
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-600">
-                  {filteredCompleted.length}
-                </span>
-              </div>
-
-              <select
-                value={sortOption}
-                onChange={(event) =>
-                  setSortOption(
-                    event.target.value as SortOption
-                  )
-                }
-                className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none"
-              >
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
-                <option value="biggest-win">
-                  Biggest Win
-                </option>
-                <option value="biggest-loss">
-                  Biggest Loss
-                </option>
+          <section className="space-y-3" aria-label="Bets in placement order">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-black">Bets</h2>
+              <select value={sortOption} onChange={(event) => setSortOption(event.target.value as SortOption)}
+                className="rounded-lg border bg-white px-3 py-2 text-xs">
+                <option value="newest">Newest</option><option value="oldest">Oldest</option>
+                <option value="biggest-win">Biggest Win</option><option value="biggest-loss">Biggest Loss</option>
               </select>
             </div>
+            {orderedBets.length === 0 && <p className="py-6 text-center text-gray-500">No bets match these filters.</p>}
+            {orderedBets.map((bet) => {
+              if (bet.kind === "parlay") {
+                const parlay = bet.value;
+                return <details key={parlay.id} className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm"><summary className="cursor-pointer list-none"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-green-100 px-2 py-1 text-[10px] font-black uppercase text-green-800">Parlay · {parlay.legs.length} legs</span>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <span className="ml-2 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">{parlay.pricing_method === HOUSE_PAYOUT_METHOD ? "House payout" : "Legacy SGP estimate"}</span>}<p className="mt-2 text-[10px] text-gray-500">Pricing: {pricingMethodLabel(parlay.pricing_method)}</p><p className="mt-2 text-sm font-extrabold">Combined odds {parlay.combined_american_odds > 0 ? "+" : ""}{parlay.combined_american_odds}</p><p className="text-xs text-gray-500">{new Date(parlay.created_at).toLocaleString()} · {Number(parlay.stake).toFixed(2)} units staked</p></div><div className="text-right"><p className="text-sm font-black uppercase">{parlay.status}</p><p className="text-xs text-gray-500">{parlay.actual_return !== null ? `Return ${Number(parlay.actual_return).toFixed(2)} units` : `Potential return ${Number(parlay.potential_return).toFixed(2)} units`}</p><p className="text-xs text-gray-500">Potential profit {Number(parlay.potential_profit).toFixed(2)} units</p></div></div>{new Set(parlay.legs.map((leg) => leg.game_id)).size < parlay.legs.length && <p className="mt-2 text-xs text-amber-800">{parlay.pricing_method === HOUSE_PAYOUT_METHOD ? HOUSE_PAYOUT_EXPLANATION : "Historical wager: accepted under the previous independent-leg estimate; original accepted prices are preserved."}</p>}<p className="mt-2 break-words text-xs font-medium">{parlay.legs.map((leg) => leg.market === "Total" ? `${wagerMatchup(leg.game)}: ${leg.selection} ${leg.line ?? "—"} (${leg.american_odds > 0 ? "+" : ""}${leg.american_odds})` : `${leg.selection} ${leg.market === "Moneyline" ? "ML" : leg.line ?? ""}`).join(" · ")}</p></summary><div className="mt-3"><button onClick={() => void shareParlay(parlay.id)} className="rounded-lg border px-3 py-2 text-xs font-bold">{shareLinks[parlay.id] ? "Copy share link" : "Share parlay"}</button>{shareLinks[parlay.id] && <a href={shareLinks[parlay.id]} className="ml-2 break-all text-xs text-green-700">{shareLinks[parlay.id]}</a>}</div><div className="mt-3 space-y-2 border-t pt-3">{parlay.legs.map((leg) => <div key={leg.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-gray-50 p-2.5 text-xs"><div><p className="break-words font-medium">{wagerMatchup(leg.game)}</p><p className="font-bold">{leg.selection} {leg.market === "Moneyline" ? "ML" : leg.line === null ? "" : leg.market === "Spread" && leg.line > 0 ? `+${leg.line}` : leg.line} <span className="text-gray-500">{leg.american_odds > 0 ? "+" : ""}{leg.american_odds}</span></p></div><span className="font-bold uppercase">{leg.result}{leg.game?.status === "live" ? " · live" : ""}</span></div>)}</div></details>;
+              }
+              const wager = bet.value;
 
-            {filteredCompleted.length === 0 ? (
-              <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
-                <div className="text-sm font-semibold text-gray-600">
-                  No completed single wagers match these filters.
-                </div>
-
-                <button
-                  onClick={() => {
-                    setResultFilter("all");
-                    setTimeFilter("all");
-                    setBetTypeFilter("all");
-                  }}
-                  className="mt-2 text-sm font-bold text-green-600 hover:text-green-700"
-                >
-                  Clear filters
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {sortedCompletedWagers.map((wager) => {
                   const normalizedResult =
                     wager.result?.toLowerCase();
 
@@ -1026,13 +864,11 @@ export default function WagersPage() {
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
+            })}
           </section>
 
           {/* Active Sort Indicator */}
-          {filteredCompleted.length > 1 && (
+          {orderedBets.length > 1 && (
             <div className="mt-4 text-center text-xs text-gray-400">
               Sorted by {sortLabel()}
             </div>
