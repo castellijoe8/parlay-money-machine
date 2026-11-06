@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, type CSSProperties } from "react";
 
+import RivalryPanel from "@/app/rivalry-panel";
 import { supabase } from "@/lib/supabase";
 
 type Pick = {
@@ -705,6 +706,7 @@ export default function LeaderboardPage() {
           </div>
         </>
       )}
+      <RivalryPanel />
     </main>
   );
 }
