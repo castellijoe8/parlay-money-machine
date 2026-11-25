@@ -21,7 +21,7 @@ type Leg = {
   odds: number; result: string; game: { away_team: string; home_team: string } | null;
 };
 type Parlay = { id: string; user_name: string; status: string; legs: Leg[] };
-type Lock = { user_id: string; pick_id: string };
+type Lock = { user_id: string; pick_id: string; stake_multiplier: number };
 type Activity = {
   id: string; user_name: string | null; result: string | null; units: number | null;
   kind: string; created_at: string;
@@ -60,7 +60,7 @@ export default function ClubhousePage() {
         const [pickData, parlayData, lockData, activityData] = await Promise.all([
           supabase.from("picks").select("id,user_id,user_name,game_id,pick,bet_type,line,odds,result,game:games!inner(id,away_team,home_team,starts_at,status,away_score,home_score)").gte("game.starts_at", week.startIso).order("created_at", { ascending: false }),
           supabase.rpc("friends_parlays"),
-          supabase.from("weekly_locks").select("user_id,pick_id").eq("week_start", weekDate),
+          supabase.from("weekly_locks").select("user_id,pick_id,stake_multiplier").eq("week_start", weekDate),
           supabase.from("wager_records").select("id,user_name,result,units,kind,created_at").gte("created_at", week.startIso).order("created_at", { ascending: false }),
         ]);
         if (!active) return;
@@ -151,14 +151,14 @@ export default function ClubhousePage() {
         </article>)}</div>
         {!rivalries.length && <p className={card}>No opposing picks on upcoming or live games this week yet.</p>}
       </section>
-      <section aria-labelledby="locks"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 id="locks" className="text-xl font-black">The Lock Board</h2><Link href="/leaderboard" className="text-sm font-bold text-green-800 underline">Choose your lock</Link></div>
+      <section aria-labelledby="locks"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 id="locks" className="text-xl font-black">The Lock Board</h2><Link href="/wagers" className="text-sm font-bold text-green-800 underline">Choose your lock</Link></div>
         <div className="grid gap-3 sm:grid-cols-2">{locks.map((lock) => {
           const pick = picks.find((item) => item.id === lock.pick_id);
-          return <article className={card} key={lock.user_id}><h3 className="font-bold">{pick?.user_name || "Player"} · Lock of the Week</h3>
+          return <article className={`${card} border-amber-400`} key={lock.user_id}><h3 className="font-bold text-amber-800">🔒 {pick?.user_name || "Player"} · Lock of the Week · {lock.stake_multiplier}u</h3>
             {pick ? <><p className="mt-1 break-words font-medium">{wagerMatchup(pick.game)}</p><p>{selection(pick)}</p><p className="mt-2 text-xs font-bold uppercase">{resultCode(pick.result)}</p></> : <p>Selection unavailable</p>}
           </article>;
         })}</div>
-        {!locks.length && <p className={card}>Nobody has planted their flag this week. Make your lock on the Leaderboard.</p>}
+        {!locks.length && <p className={card}>Nobody has planted their flag this week. Make your lock in My Wagers.</p>}
       </section>
       <section aria-labelledby="headlines"><h2 id="headlines" className="mb-3 text-xl font-black">Crew Headlines</h2>
         <p className="mb-3 text-sm text-gray-600">Latest results from wagers placed in this Tuesday–Monday week.</p>
