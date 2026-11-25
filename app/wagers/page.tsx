@@ -21,6 +21,7 @@ type Wager = {
     home_team: string | null;
     starts_at: string | null;
     sport: "ncaaf" | "nfl" | null;
+    status: string | null;
   } | null;
 };
 
@@ -41,6 +42,10 @@ export default function WagersPage() {
   const [wagers, setWagers] = useState<Wager[]>([]);
   const [parlays, setParlays] = useState<Parlay[]>([]);
   const [shareLinks, setShareLinks] = useState<Record<string, string>>({});
+  const [locks, setLocks] = useState<Array<{pick_id: string; week_start: string; stake_multiplier: number}>>([]);
+  const [locksReady, setLocksReady] = useState(false);
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockMessage, setLockMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -83,7 +88,8 @@ export default function WagersPage() {
           away_team,
           home_team,
           starts_at,
-          sport
+          sport,
+          status
         )
       `
       )
@@ -101,8 +107,38 @@ export default function WagersPage() {
     if (parlayError) { console.error("Error loading parlays:", parlayError); setMessage("Unable to load parlay history. Check the database migration before placing more wagers."); }
     setParlays((parlayData as unknown as Parlay[]) ?? []);
 
+    const lockData = await supabase.from("weekly_locks").select("pick_id,week_start,stake_multiplier").eq("user_id", user.id);
+    setLocksReady(!lockData.error);
+    setLocks(lockData.data ?? []);
     setWagers((data as unknown as Wager[]) || []);
     setLoading(false);
+  }
+
+  function weekStart(value: string | Date) {
+    const parts = new Intl.DateTimeFormat("en-US", {timeZone:"America/Los_Angeles", year:"numeric", month:"2-digit", day:"2-digit"}).formatToParts(new Date(value));
+    const part = (name: string) => Number(parts.find(p => p.type === name)?.value);
+    const date = new Date(Date.UTC(part("year"), part("month")-1, part("day")));
+    date.setUTCDate(date.getUTCDate() - ((date.getUTCDay()+5)%7));
+    return date.toISOString().slice(0,10);
+  }
+
+  function upcoming(wager: Wager) {
+    return wager.result?.toLowerCase() === "pending" && wager.game?.status === "scheduled" &&
+      !!wager.game.starts_at && Date.parse(wager.game.starts_at) > Date.now();
+  }
+
+  async function chooseLock(wager: Wager) {
+    if (lockBusy) return;
+    const previous = locks.find(l => l.week_start === weekStart(new Date()));
+    if (previous && previous.pick_id !== wager.id && !window.confirm("Switch your weekly lock? Your previous pick returns to one unit.")) return;
+    setLockBusy(true);
+    setLockMessage("");
+    try {
+      const {error} = await supabase.rpc("choose_weekly_lock", {p_pick_id:wager.id});
+      if (error) { setLockMessage(error.message); return; }
+      await loadWagers();
+      setLockMessage("Lock of the Week updated.");
+    } finally { setLockBusy(false); }
   }
 
   async function shareParlay(parlayId: string) {
@@ -800,6 +836,14 @@ export default function WagersPage() {
                   const normalizedResult =
                     wager.result?.toLowerCase();
 
+                  const lock = locks.find(l => l.pick_id === wager.id);
+                  const currentLock = locks.find(l => l.week_start === weekStart(new Date()));
+                  const previousWager = wagers.find(w => w.id === currentLock?.pick_id);
+                  const eligible = locksReady && upcoming(wager) && !!wager.game?.starts_at &&
+                    weekStart(wager.game.starts_at) === weekStart(new Date()) &&
+                    (!currentLock || (!!previousWager && upcoming(previousWager)));
+                  const stake = lock?.stake_multiplier ?? 1;
+                  const profit = wager.odds == null ? 0 : wager.odds > 0 ? stake*wager.odds/100 : wager.odds < 0 ? stake*100/Math.abs(wager.odds) : stake;
                   const isWin = normalizedResult === "win";
                   const isLoss = normalizedResult === "loss";
                   const isPush = normalizedResult === "push";
@@ -816,6 +860,7 @@ export default function WagersPage() {
                           <div className="text-base font-black">
                             {wager.pick}
                           </div>
+                          {lock && <span className="mt-1 inline-block rounded bg-amber-100 px-2 py-1 text-xs font-bold text-amber-900">🔒 Lock of the Week · {stake}u</span>}
 
                           <div className="mt-1 text-sm font-semibold text-gray-700">
                             {gameName(wager)}
@@ -858,15 +903,19 @@ export default function WagersPage() {
                                 : "text-gray-900"
                             }`}
                           >
-                            {formatUnits(wager.units)}
+                            {normalizedResult === "pending" ? `${stake.toFixed(2)}u stake` : formatUnits(wager.units)}
                           </div>
                         </div>
                       </div>
+                      {normalizedResult === "pending" && <p className="mt-2 text-xs text-gray-500">Potential profit +{profit.toFixed(2)}u · Risk {stake.toFixed(2)}u</p>}
+                      {eligible && !lock && <button type="button" disabled={lockBusy} onClick={() => void chooseLock(wager)} className="mt-3 w-full rounded-lg border border-amber-500 px-3 py-2 text-xs font-bold text-amber-700 disabled:opacity-50">{currentLock ? "Switch Lock to This Pick" : "Make Lock of the Week"}</button>}
+                      {lock && !upcoming(wager) && <p className="mt-2 text-xs text-gray-500">Lock finalized.</p>}
                     </div>
                   );
             })}
           </section>
 
+          {lockMessage && <p role="status" className="mt-3 text-sm font-medium">{lockMessage}</p>}
           {/* Active Sort Indicator */}
           {orderedBets.length > 1 && (
             <div className="mt-4 text-center text-xs text-gray-400">
