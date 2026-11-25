@@ -236,6 +236,7 @@ export default function FriendsWagersPage() {
   }, [currentUserId]);
 
   const [wagers, setWagers] = useState<FriendWager[]>([]);
+  const [lockStakes, setLockStakes] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [selectedPlayerId, setSelectedPlayerId] = useState("all");
@@ -246,7 +247,7 @@ export default function FriendsWagersPage() {
       setLoading(true);
       setMessage("");
 
-      const [{ data: authData }, { data, error }] = await Promise.all([
+      const [{ data: authData }, { data, error }, lockData] = await Promise.all([
         supabase.auth.getUser(),
         supabase
           .from("wager_records")
@@ -254,7 +255,10 @@ export default function FriendsWagersPage() {
             "id, kind, sports, game_id, user_id, user_name, pick, bet_type, line, odds, result, units, created_at, game"
           )
           .order("created_at", { ascending: false }),
+        supabase.from("weekly_locks").select("pick_id,stake_multiplier"),
       ]);
+      if (lockData.error) console.error("Weekly locks lookup:", lockData.error);
+      setLockStakes(Object.fromEntries((lockData.data ?? []).map(l => [l.pick_id, l.stake_multiplier])));
 
       setCurrentUserId(authData.user?.id ?? null);
 
@@ -582,6 +586,7 @@ export default function FriendsWagersPage() {
                           <p className="mt-2 text-xl font-black text-gray-950 sm:text-2xl">
                             {formatPick(wager)}
                           </p>
+                          {wager.kind === "single" && lockStakes[wager.id] && <span className="mt-2 inline-block rounded bg-amber-100 px-2 py-1 text-xs font-bold text-amber-900">🔒 Lock of the Week · {lockStakes[wager.id]}u</span>}
                         </div>
 
                         <span
@@ -598,7 +603,7 @@ export default function FriendsWagersPage() {
                         <span>·</span>
                         <span>{formatOdds(wager.odds) || "—"}</span>
                         <span>·</span>
-                        <span>1.0 unit</span>
+                        <span>{wager.kind === "single" ? (lockStakes[wager.id] ?? 1).toFixed(1) : "1.0"} units</span>
 
                         {result !== "pending" && (
                           <>
